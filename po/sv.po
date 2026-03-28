@@ -1,13 +1,13 @@
-# paru Swedish translation.
-# Copyright (C) YEAR THE paru'S COPYRIGHT HOLDER
-# This file is distributed under the same license as the paru package.
+# bah Swedish translation.
+# Copyright (C) YEAR THE bah'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the bah package.
 # filiphe <filip@hesslund.org>, 2021.
 # Luna Jernberg <droidbittin@gmail.com>, 2022, 2023, 2024, 2026.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: paru VERSION\n"
-"Report-Msgid-Bugs-To: https://github.com/Morganamilo/paru\n"
+"Project-Id-Version: bah VERSION\n"
+"Report-Msgid-Bugs-To: https://github.com/Morganamilo/bah\n"
 "POT-Creation-Date: 2026-01-08 17:40+0000\n"
 "PO-Revision-Date: 2026-01-09 05:48+0000\n"
 "Last-Translator: Luna Jernberg <droidbittin@gmail.com>\n"
@@ -321,76 +321,76 @@ msgid "Usage:"
 msgstr "Användning:"
 
 #: src/help.rs:5
-msgid "    paru"
-msgstr "    paru"
+msgid "    bah"
+msgstr "    bah"
 
 #: src/help.rs:6
-msgid "    paru <operation> [...]"
-msgstr "    paru <operation> [...]"
+msgid "    bah <operation> [...]"
+msgstr "    bah <operation> [...]"
 
 #: src/help.rs:7
-msgid "    paru <package(s)>"
-msgstr "    paru <paket>"
+msgid "    bah <package(s)>"
+msgstr "    bah <paket>"
 
 #: src/help.rs:9
 msgid "Pacman operations:"
 msgstr "Pacman operationer:"
 
 #: src/help.rs:10
-msgid "    paru {-h --help}"
-msgstr "    paru {-h --help}"
+msgid "    bah {-h --help}"
+msgstr "    bah {-h --help}"
 
 #: src/help.rs:11
-msgid "    paru {-V --version}"
-msgstr "    paru {-V --version}"
+msgid "    bah {-V --version}"
+msgstr "    bah {-V --version}"
 
 #: src/help.rs:12
-msgid "    paru {-D --database}    <options> <package(s)>"
-msgstr "    paru {-D --database}    <alternativ> <paket>"
+msgid "    bah {-D --database}    <options> <package(s)>"
+msgstr "    bah {-D --database}    <alternativ> <paket>"
 
 #: src/help.rs:13
-msgid "    paru {-F --files}       [options] [package(s)]"
-msgstr "    paru {-F --files}       [alternativ] [paket]"
+msgid "    bah {-F --files}       [options] [package(s)]"
+msgstr "    bah {-F --files}       [alternativ] [paket]"
 
 #: src/help.rs:14
-msgid "    paru {-Q --query}       [options] [package(s)]"
-msgstr "    paru {-Q --query}       [alternativ] [paket]"
+msgid "    bah {-Q --query}       [options] [package(s)]"
+msgstr "    bah {-Q --query}       [alternativ] [paket]"
 
 #: src/help.rs:15
-msgid "    paru {-R --remove}      [options] <package(s)>"
-msgstr "    paru {-R --remove}      [alternativ] <paket>"
+msgid "    bah {-R --remove}      [options] <package(s)>"
+msgstr "    bah {-R --remove}      [alternativ] <paket>"
 
 #: src/help.rs:16
-msgid "    paru {-S --sync}        [options] [package(s)]"
-msgstr "    paru {-S --sync}        [alternativ] [paket]"
+msgid "    bah {-S --sync}        [options] [package(s)]"
+msgstr "    bah {-S --sync}        [alternativ] [paket]"
 
 #: src/help.rs:17
-msgid "    paru {-T --deptest}     [options] [package(s)]"
-msgstr "    paru {-T --deptest}     [alternativ] [paket]"
+msgid "    bah {-T --deptest}     [options] [package(s)]"
+msgstr "    bah {-T --deptest}     [alternativ] [paket]"
 
 #: src/help.rs:18
-msgid "    paru {-U --upgrade}     [options] [file(s)]"
-msgstr "    paru {-U --upgrade}     [alternativ] [filer]"
+msgid "    bah {-U --upgrade}     [options] [file(s)]"
+msgstr "    bah {-U --upgrade}     [alternativ] [filer]"
 
 #: src/help.rs:20
 msgid "New operations:"
 msgstr "Nya operationer:"
 
 #: src/help.rs:21
-msgid "    paru {-P --show}        [options]"
-msgstr "    paru {-P --show}        [alternativ]"
+msgid "    bah {-P --show}        [options]"
+msgstr "    bah {-P --show}        [alternativ]"
 
 #: src/help.rs:22
-msgid "    paru {-G --getpkgbuild} [package(s)]"
-msgstr "    paru {-G --getpkgbuild} [paket]"
+msgid "    bah {-G --getpkgbuild} [package(s)]"
+msgstr "    bah {-G --getpkgbuild} [paket]"
 
 #: src/help.rs:23
-msgid "    paru {-B --build}       [dir(s)]"
-msgstr "    paru {-B --build}       [katalog(er)]"
+msgid "    bah {-B --build}       [dir(s)]"
+msgstr "    bah {-B --build}       [katalog(er)]"
 
 #: src/help.rs:25
-msgid "If no arguments are provided 'paru -Syu' will be performed"
-msgstr "Om inga argument tillhandahålls kommer 'paru -Syu' att utföras"
+msgid "If no arguments are provided 'bah -Syu' will be performed"
+msgstr "Om inga argument tillhandahålls kommer 'bah -Syu' att utföras"
 
 #: src/help.rs:27
 msgid "Options without operation:"
@@ -425,8 +425,8 @@ msgid "    -a --aur               Assume targets are from the AUR"
 msgstr "    -a --aur               Anta att målen kommer från AUR"
 
 #: src/help.rs:35
-msgid "    --mode      <mode>     Sets where paru looks for targets"
-msgstr "    --mode      <mode>     Ställer in var paru letar efter mål"
+msgid "    --mode      <mode>     Sets where bah looks for targets"
+msgstr "    --mode      <mode>     Ställer in var bah letar efter mål"
 
 #: src/help.rs:37
 msgid ""

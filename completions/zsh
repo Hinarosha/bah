@@ -1,4 +1,4 @@
-#compdef paru
+#compdef bah
 # vim:fdm=marker foldlevel=0 tabstop=2 shiftwidth=2 filetype=zsh
 
 typeset -A opt_args
@@ -13,7 +13,7 @@ _pacman_opts_commands=(
 	{-C,--chrootctl}'[Interactive shell to the chroot]'
 	{-Q,--query}'[Query the package database]'
 	{-R,--remove}'[Remove a package from the system]'
-	{-P,--show}'[Print paru information]'
+	{-P,--show}'[Print bah information]'
 	{-S,--sync}'[Synchronize packages]'
 	{-T,--deptest}'[Check if dependencies are installed]'
 	{-U,--upgrade}'[Upgrade a package]'
@@ -441,16 +441,16 @@ _pacman_completions_all_packages() {
 	fi
 
 	if compset -P1 '*/*'; then
-		packages=( $(_call_program packages paru -Pc ${words[CURRENT]%/*}) )
+		packages=( $(_call_program packages bah -Pc ${words[CURRENT]%/*}) )
 		typeset -U packages
 		${seq} _wanted repo_packages expl "repository/package" compadd ${sep[@]} ${(@)packages}
 	else
-		packages=( $(_call_program packages paru -Pc ) )
+		packages=( $(_call_program packages bah -Pc ) )
 		typeset -U packages
 		${seq} _wanted packages expl "packages" compadd ${sep[@]} - "${(@)packages}"
 
 		repositories=($(pacman-conf --repo-list) \
-			$(_call_program packages paru -Sl --pkgbuilds | cut -d ' ' -f1 | uniq))
+			$(_call_program packages bah -Sl --pkgbuilds | cut -d ' ' -f1 | uniq))
 		typeset -U repositories
 		_wanted repo_packages expl "repository/package" compadd -S "/" $repositories
 	fi
@@ -458,9 +458,9 @@ _pacman_completions_all_packages() {
 
 _pacman_completions_aur_packages() {
   # make sure cache is full
-  paru -Pc >/dev/null
+  bah -Pc >/dev/null
 
-  local cache_file=${XDG_CACHE_HOME:-$HOME/.cache}/paru/packages.aur
+  local cache_file=${XDG_CACHE_HOME:-$HOME/.cache}/bah/packages.aur
   if [ ! -f $cache_file ]; then
     return
   fi
@@ -495,7 +495,7 @@ _pacman_all_packages() {
 _pacman_completions_repositories() {
 	local -a cmd repositories
 	repositories=($(pacman-conf --repo-list) \
-		$(_call_program packages paru -Sl --pkgbuilds | cut -d ' ' -f1 | uniq))
+		$(_call_program packages bah -Sl --pkgbuilds | cut -d ' ' -f1 | uniq))
 	# Uniq the array
 	typeset -U repositories
 	compadd "$@" -a repositories
@@ -611,7 +611,7 @@ _pacman_zsh_comp() {
 			;;
 		Y*)
 			_arguments -s : \
-				"$_pacman_opts_paru_modifiers[@]"
+				"$_pacman_opts_bah_modifiers[@]"
 			;;
 		G*)
 			_pacman_action_getpkgbuild
@@ -671,7 +671,7 @@ _pacman_zsh_comp() {
 }
 _pacman_comp() {
 	case "$service" in
-		paru)
+		bah)
 			_pacman_zsh_comp "$@"
 			;;
 		*)

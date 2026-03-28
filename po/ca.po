@@ -1,12 +1,12 @@
-# Paru Catalan translation
+# bah Catalan translation
 # Copyright (C) 2021
-# This file is distributed under the same license as the paru package.
+# This file is distributed under the same license as the bah package.
 # Ícar Nin Solana <icar.nin@protonmail.com>, 2021.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: paru VERSION\n"
-"Report-Msgid-Bugs-To: https://github.com/Morganamilo/paru\n"
+"Project-Id-Version: bah VERSION\n"
+"Report-Msgid-Bugs-To: https://github.com/Morganamilo/bah\n"
 "POT-Creation-Date: 2026-01-08 17:40+0000\n"
 "PO-Revision-Date: 2022-12-08 01:06+0100\n"
 "Last-Translator: Ícar N. S. <icar.nin@protonmail.com>\n"
@@ -326,76 +326,76 @@ msgid "Usage:"
 msgstr "Ús:"
 
 #: src/help.rs:5
-msgid "    paru"
-msgstr "    paru"
+msgid "    bah"
+msgstr "    bah"
 
 #: src/help.rs:6
-msgid "    paru <operation> [...]"
-msgstr "    paru <operació> [...]"
+msgid "    bah <operation> [...]"
+msgstr "    bah <operació> [...]"
 
 #: src/help.rs:7
-msgid "    paru <package(s)>"
-msgstr "    paru <paquet(s)>"
+msgid "    bah <package(s)>"
+msgstr "    bah <paquet(s)>"
 
 #: src/help.rs:9
 msgid "Pacman operations:"
 msgstr "Operacions del Pacman:"
 
 #: src/help.rs:10
-msgid "    paru {-h --help}"
-msgstr "    paru {-h --help}"
+msgid "    bah {-h --help}"
+msgstr "    bah {-h --help}"
 
 #: src/help.rs:11
-msgid "    paru {-V --version}"
-msgstr "    paru {-V --version}"
+msgid "    bah {-V --version}"
+msgstr "    bah {-V --version}"
 
 #: src/help.rs:12
-msgid "    paru {-D --database}    <options> <package(s)>"
-msgstr "    paru {-D --database}    <opcions> <paquet(s)>"
+msgid "    bah {-D --database}    <options> <package(s)>"
+msgstr "    bah {-D --database}    <opcions> <paquet(s)>"
 
 #: src/help.rs:13
-msgid "    paru {-F --files}       [options] [package(s)]"
-msgstr "    paru {-F --files}       [opcions] [paquet(s)]"
+msgid "    bah {-F --files}       [options] [package(s)]"
+msgstr "    bah {-F --files}       [opcions] [paquet(s)]"
 
 #: src/help.rs:14
-msgid "    paru {-Q --query}       [options] [package(s)]"
-msgstr "    paru {-Q --query}       [opcions] [paquet(s)]"
+msgid "    bah {-Q --query}       [options] [package(s)]"
+msgstr "    bah {-Q --query}       [opcions] [paquet(s)]"
 
 #: src/help.rs:15
-msgid "    paru {-R --remove}      [options] <package(s)>"
-msgstr "    paru {-R --remove}      [opcions] <paquet(s)>"
+msgid "    bah {-R --remove}      [options] <package(s)>"
+msgstr "    bah {-R --remove}      [opcions] <paquet(s)>"
 
 #: src/help.rs:16
-msgid "    paru {-S --sync}        [options] [package(s)]"
-msgstr "    paru {-S --sync}        [opcions] [paquet(s)]"
+msgid "    bah {-S --sync}        [options] [package(s)]"
+msgstr "    bah {-S --sync}        [opcions] [paquet(s)]"
 
 #: src/help.rs:17
-msgid "    paru {-T --deptest}     [options] [package(s)]"
-msgstr "    paru {-T --deptest}     [opcions] [paquet(s)]"
+msgid "    bah {-T --deptest}     [options] [package(s)]"
+msgstr "    bah {-T --deptest}     [opcions] [paquet(s)]"
 
 #: src/help.rs:18
-msgid "    paru {-U --upgrade}     [options] [file(s)]"
-msgstr "    paru {-U --upgrade}     [opcions] [fitxer(s)]"
+msgid "    bah {-U --upgrade}     [options] [file(s)]"
+msgstr "    bah {-U --upgrade}     [opcions] [fitxer(s)]"
 
 #: src/help.rs:20
 msgid "New operations:"
 msgstr "Operacions noves:"
 
 #: src/help.rs:21
-msgid "    paru {-P --show}        [options]"
-msgstr "    paru {-P --show}        [opcions]"
+msgid "    bah {-P --show}        [options]"
+msgstr "    bah {-P --show}        [opcions]"
 
 #: src/help.rs:22
-msgid "    paru {-G --getpkgbuild} [package(s)]"
-msgstr "    paru {-G --getpkgbuild} [paquet(s)]"
+msgid "    bah {-G --getpkgbuild} [package(s)]"
+msgstr "    bah {-G --getpkgbuild} [paquet(s)]"
 
 #: src/help.rs:23
-msgid "    paru {-B --build}       [dir(s)]"
-msgstr "    paru {-B --build}       [dir(s)]"
+msgid "    bah {-B --build}       [dir(s)]"
+msgstr "    bah {-B --build}       [dir(s)]"
 
 #: src/help.rs:25
-msgid "If no arguments are provided 'paru -Syu' will be performed"
-msgstr "Si no es proveeixen arguments, s'executarà 'paru -Syu'"
+msgid "If no arguments are provided 'bah -Syu' will be performed"
+msgstr "Si no es proveeixen arguments, s'executarà 'bah -Syu'"
 
 #: src/help.rs:27
 msgid "Options without operation:"
@@ -433,8 +433,8 @@ msgid "    -a --aur               Assume targets are from the AUR"
 msgstr "    -a --aur               Assumeix que els paquets són de l'AUR"
 
 #: src/help.rs:35
-msgid "    --mode      <mode>     Sets where paru looks for targets"
-msgstr "    --mode      <mode>     Indica on el paru busca objectius"
+msgid "    --mode      <mode>     Sets where bah looks for targets"
+msgstr "    --mode      <mode>     Indica on el bah busca objectius"
 
 #: src/help.rs:37
 msgid ""

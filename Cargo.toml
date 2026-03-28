@@ -1,13 +1,13 @@
 [package]
-name = "paru"
+name = "bah"
 version = "2.1.0"
 authors = ["morganamilo <morganamilo@archlinux.org>"]
 edition = "2021"
 
 description = "Feature packed AUR helper"
-homepage = "https://github.com/Morganamilo/paru"
-repository = "https://github.com/Morganamilo/paru"
-documentation = "https://docs.rs/paru"
+homepage = "https://github.com/Morganamilo/bah"
+repository = "https://github.com/Morganamilo/bah"
+documentation = "https://docs.rs/bah"
 license = "GPL-3.0"
 keywords = ["archlinux", "arch", "alpm", "pacman", "aur"]
 include = ["src/**/*", "LICENSE", "README.md", "CHANGELOG.md", "help"]

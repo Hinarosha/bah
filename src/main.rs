@@ -1,4 +1,4 @@
-use paru::run;
+use bah::run;
 use std::process::exit;
 
 #[tokio::main]

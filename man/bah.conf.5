@@ -1,21 +1,21 @@
-.TH "PARU.CONF" "5" "2021\-03\-24" "paru v1.10.0" "Paru Manual"
+.TH "bah.CONF" "5" "2021\-03\-24" "bah v1.10.0" "bah Manual"
 .nh
 .ad l
 .SH NAME
-paru.conf \- paru configuration file
+bah.conf \- bah configuration file
 
 .SH SYNOPSIS
-$PARU_CONF, $XDG_CONFIG_HOME/paru/paru.conf, $HOME/.config/paru/paru.conf, /etc/paru.conf
+$bah_CONF, $XDG_CONFIG_HOME/bah/bah.conf, $HOME/.config/bah/bah.conf, /etc/bah.conf
 
 .SH DESCRIPTION
-Paru's config file. Based on the format used by 
+bah's config file. Based on the format used by 
 .BR pacman.conf (5)
 
-Paru first attempts to read the file at $PARU_CONF. If $PARU_CONF is not
-set, paru attempts to read from $XDG_CONFIG_HOME/paru/paru.conf. If
-$XDG_CONFIG_HOME is not set, or the file doesn't exist, paru attempts to read
-from $HOME/.config/paru/paru.conf. If that file doesn't exist, it will read
-the system config from /etc/paru.conf.
+bah first attempts to read the file at $bah_CONF. If $bah_CONF is not
+set, bah attempts to read from $XDG_CONFIG_HOME/bah/bah.conf. If
+$XDG_CONFIG_HOME is not set, or the file doesn't exist, bah attempts to read
+from $HOME/.config/bah/bah.conf. If that file doesn't exist, it will read
+the system config from /etc/bah.conf.
 
 Additionally, the \fBInclude\fB directive can be used to copy paste files into
 the config. This could be used to extend the system config by including it in
@@ -51,7 +51,7 @@ sysupgrade will only act on repository packages.
 
 .TP
 .B Mode = aur|repo|pkgbuilds
-Select what kinds of packages paru should act on. Multiple modes can be selected
+Select what kinds of packages bah should act on. Multiple modes can be selected
 by separating them with a comma.
 
 Additionally, a, r and p may be used as short hand for aur, repo and pkgbuilds respectively.
@@ -118,13 +118,13 @@ PKGBUILD.
 
 .TP
 .B CombinedUpgrade
-During sysupgrade, paru will first perform a refresh, then show
+During sysupgrade, bah will first perform a refresh, then show
 its combined menu of repo and AUR packages that will be upgraded. Then after
 reviewing the PKGBUILDs, the repo and AUR upgrade will start with no need
 for manual intervention.
 
-If paru exits for any reason after the refresh without upgrading, it will be
-the user's responsibility to either resolve the reason paru exited or run
+If bah exits for any reason after the refresh without upgrading, it will be
+the user's responsibility to either resolve the reason bah exited or run
 a sysupgrade through pacman directly.
 
 .TP
@@ -140,8 +140,8 @@ Print new news during sysupgrade.
 
 .TP
 .B UseAsk
-Use pacman's --ask flag to automatically confirm package conflicts. Paru lists
-conflicts ahead of time. It is possible that paru does not detect
+Use pacman's --ask flag to automatically confirm package conflicts. bah lists
+conflicts ahead of time. It is possible that bah does not detect
 a conflict, causing a package to be removed without the user's confirmation.
 However, this is very unlikely.
 
@@ -153,7 +153,7 @@ Commit changes to pkgbuilds made during review.
 .B FailFast
 Exit as soon as any AUR packages fail to build.
 
-By default Paru will continue and try to build other AUR packages.
+By default bah will continue and try to build other AUR packages.
 
 .TP
 .B KeepSrc
@@ -232,7 +232,7 @@ The makepkg config file to use.
 
 .TP
 .B DevelSuffixes = Suffixes...
-Suffixes that paru will use to decide if a package is a devel package.
+Suffixes that bah will use to decide if a package is a devel package.
 Used when determining if a pkgver bump is used when the --needed option is
 set.
 
@@ -244,10 +244,10 @@ Don't warn when these packages are not in the aur, out of date, or orphaned.
 .B LocalRepo [= Repos...]
 Use a local repo to build and upgrade AUR packages.
 
-Paru will act on packages in the enabled repos instead of foreign packages.
+bah will act on packages in the enabled repos instead of foreign packages.
 The repo must already be declared in pacman.conf but does not have to already exist on disk.
 
-Optionally a list of repos to use can be passed. By default paru will consider all
+Optionally a list of repos to use can be passed. By default bah will consider all
 local repos, building new packages into the first listed repo and upgrading the packages
 in other enabled repos.
 
@@ -323,43 +323,43 @@ persist unless committed.
 .TP
 .B MFlags = Flags...
 Passes arguments to makepkg. These flags get passed to every instance where
-makepkg is called by paru. Arguments are split on whitespace before being
+makepkg is called by bah. Arguments are split on whitespace before being
 passed to makepkg.
 
 .TP
 .B GitFlags = Flags...
 Passes arguments to git. These flags get passed to every instance where
-git is called by paru. Arguments are split on whitespace before being
+git is called by bah. Arguments are split on whitespace before being
 passed to git.
 .TP
 
 .B GpgFlags = Flags...
 Passes arguments to gpg. These flags get passed to every instance where
-gpg is called by paru. Arguments are split on whitespace before being
+gpg is called by bah. Arguments are split on whitespace before being
 passed to gpg.
 
 .TP
 .B BatFlags = Flags...
 Passes arguments to bat. These flags get passed to every instance where
-bat is called by paru. Arguments are split on whitespace before being
+bat is called by bah. Arguments are split on whitespace before being
 passed to bat.
 
 .TP
 .B SudoFlags = Flags...
 Passes arguments to sudo. These flags get passed to every instance where
-sudo is called by paru. Arguments are split on whitespace before being
+sudo is called by bah. Arguments are split on whitespace before being
 passed to sudo.
 
 .TP
 .B FileManagerFlags = Flags...
 Passes arguments to the file manager. These flags get passed to every instance
-where file manager is called by paru. Arguments are split on whitespace before
+where file manager is called by bah. Arguments are split on whitespace before
 being passed to file manager.
 
 .TP
 .B ChrootFlags = Flags...
 Passes arguments to makechrootpkg. These flags get passed to every instance
-where makechrootpkg is called by paru. Arguments are split on whitespace before
+where makechrootpkg is called by bah. Arguments are split on whitespace before
 being passed to makechrootpkg.
 
 .TP
@@ -407,10 +407,10 @@ and upgrades. Packages in PKGBUILD repositories also take priority over the AUR 
 may be used to mask packages.
 
 The layout of a PKGBUILD repository is simply a directory that contains PKGBUILDs.
-Paru will recursively scan a repository for PKGBUILDs, up to 3 levels by default.
+bah will recursively scan a repository for PKGBUILDs, up to 3 levels by default.
 
-Paru will refresh PKGBUILD repositories when it refreshes repository databases.
-Refreshing just PKGBUILD repositories can be done with \fBparu -Sya\fR.
+bah will refresh PKGBUILD repositories when it refreshes repository databases.
+Refreshing just PKGBUILD repositories can be done with \fBbah -Sya\fR.
 
 .TP
 .B Url = https://path/to/repo
@@ -418,14 +418,14 @@ Git URL to the PKGBUILD repository. File paths may be used to point to git repos
 disk.
 
 If \fBPath\fR is specified alongside \fBUrl\fR, the specified path will be treated as
-a subdirectory of the repository and paru will only search for pkgbuilds in that
+a subdirectory of the repository and bah will only search for pkgbuilds in that
 subdirectory.
 
 .TP
 .B Path = /path/to/repo
 Can be used as an alternative to \fBURL\fR to point to a PKGBUILD repository on disk.
-Unlike using a URL path, changes to this directory are propagated to paru immediately
-and not on \fBparu -Sya\fR. There is also no review step for this kind of repository.
+Unlike using a URL path, changes to this directory are propagated to bah immediately
+and not on \fBbah -Sya\fR. There is also no review step for this kind of repository.
 
 .TP
 .B Depth = N

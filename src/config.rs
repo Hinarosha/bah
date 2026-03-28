@@ -570,7 +570,7 @@ impl Ini for Config {
             CallbackKind::Directive(_, key, value) => self.parse_directive(key, value),
         };
 
-        let filename = cb.filename.unwrap_or("paru.conf");
+        let filename = cb.filename.unwrap_or("bah.conf");
         err.map_err(|e| anyhow!("{}:{}: {}", filename, cb.line_number, e))
     }
 }
@@ -579,20 +579,20 @@ impl Config {
     pub fn new() -> Result<Self> {
         let cache =
             dirs::cache_dir().ok_or_else(|| anyhow!(tr!("failed to find cache directory")))?;
-        let cache = cache.join("paru");
+        let cache = cache.join("bah");
         let config =
             dirs::config_dir().ok_or_else(|| anyhow!(tr!("failed to find config directory")))?;
-        let config = config.join("paru");
+        let config = config.join("bah");
         let state = dirs::state_dir()
             .or_else(dirs::cache_dir)
             .ok_or_else(|| anyhow!(tr!("failed to find state directory")))?;
-        let state = state.join("paru");
+        let state = state.join("bah");
 
         let build_dir = cache.join("clone");
         let old_old_devel_path = cache.join("devel.json");
         let old_devel_path = state.join("devel.json");
         let devel_path = state.join("devel.toml");
-        let config_path = config.join("paru.conf");
+        let config_path = config.join("bah.conf");
 
         let old = if old_devel_path.exists() {
             Some(&old_devel_path)
@@ -628,7 +628,7 @@ impl Config {
             }
         }
 
-        if let Ok(conf) = var("PARU_CONF") {
+        if let Ok(conf) = var("bah_CONF") {
             let path = PathBuf::from(conf);
             ensure!(
                 path.exists(),
@@ -638,7 +638,7 @@ impl Config {
         } else if config_path.exists() {
             config.config_path = Some(config_path);
         } else {
-            let config_path = PathBuf::from("/etc/paru.conf");
+            let config_path = PathBuf::from("/etc/bah.conf");
 
             if config_path.exists() {
                 config.config_path = Some(config_path);
@@ -727,10 +727,10 @@ impl Config {
         {
             use std::time::Duration;
 
-            let ver = option_env!("PARU_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"));
+            let ver = option_env!("bah_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"));
             let client = reqwest::Client::builder()
                 .tcp_keepalive(Duration::new(15, 0))
-                .user_agent(format!("paru/{}", ver))
+                .user_agent(format!("bah/{}", ver))
                 .build()?;
 
             let rpc_url = match &self.aur_rpc_url {
@@ -811,7 +811,7 @@ impl Config {
     Server = file:///var/lib/repo/aur
 
 then initialise it with:
-    paru -Ly"
+    bah -Ly"
                 );
             }
 
@@ -1169,8 +1169,8 @@ then initialise it with:
 }
 
 pub fn version() {
-    let ver = option_env!("PARU_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"));
-    print!("paru v{}", ver);
+    let ver = option_env!("bah_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"));
+    print!("bah v{}", ver);
     #[cfg(feature = "git")]
     print!(" +git");
     println!(" - libalpm v{}", alpm::version());

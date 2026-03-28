@@ -141,7 +141,7 @@ async fn run(run_args: &[&str], repo: bool) -> Result<(TempDir, i32)> {
     std::env::set_var("PACMAN", "true");
     std::env::set_var("PACMAN_CONF", dir.join("pacman.conf"));
     std::env::set_var("DBPATH", dir.join("db"));
-    std::env::set_var("PARU_CONF", testdata.join("paru.conf"));
+    std::env::set_var("bah_CONF", testdata.join("bah.conf"));
     std::env::set_var("PATH", path);
 
     std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_CHECKDEPENDS_SH", "1");
@@ -172,12 +172,12 @@ async fn run(run_args: &[&str], repo: bool) -> Result<(TempDir, i32)> {
     if repo {
         let mut args = args.clone();
         args.push("-Ly");
-        let ret = paru::run(&args).await;
+        let ret = bah::run(&args).await;
         assert_eq!(ret, 0);
     }
 
     args.extend(run_args);
-    let ret = paru::run(&args).await;
+    let ret = bah::run(&args).await;
 
     for pkg in std::fs::read_dir(dir.join("cache/pkg"))? {
         let path = pkg?.path();

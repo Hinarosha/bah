@@ -2,10 +2,10 @@
 set -e
 
 xtr \
-	-d paru \
-	--msgid-bugs-address https://github.com/Morganamilo/paru \
-	--package-name=paru\
+	-d bah \
+	--msgid-bugs-address https://github.com/Morganamilo/bah \
+	--package-name=bah\
 	--package-version="$(awk -F '=' '/^version/ {print $2}' Cargo.toml | sed 's/\"//g')" \
 	-k printtr -k tr \
-	-o=po/paru.pot \
+	-o=po/bah.pot \
 	src/lib.rs

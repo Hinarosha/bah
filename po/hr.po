@@ -1,13 +1,13 @@
 # SOME DESCRIPTIVE TITLE.
-# Copyright (C) YEAR THE paru'S COPYRIGHT HOLDER
-# This file is distributed under the same license as the paru package.
+# Copyright (C) YEAR THE bah'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the bah package.
 # Ivan Merčep <i1mercep@gmail.com>, 2021.
 #
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: paru VERSION\n"
-"Report-Msgid-Bugs-To: https://github.com/Morganamilo/paru\n"
+"Project-Id-Version: bah VERSION\n"
+"Report-Msgid-Bugs-To: https://github.com/Morganamilo/bah\n"
 "POT-Creation-Date: 2026-01-08 17:40+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: Ivan Merčep <i1mercep@gmail.com>\n"
@@ -336,77 +336,77 @@ msgid "Usage:"
 msgstr "Korištenje:"
 
 #: src/help.rs:5
-msgid "    paru"
-msgstr "    paru"
+msgid "    bah"
+msgstr "    bah"
 
 #: src/help.rs:6
-msgid "    paru <operation> [...]"
-msgstr "    paru <operacija> [...]"
+msgid "    bah <operation> [...]"
+msgstr "    bah <operacija> [...]"
 
 #: src/help.rs:7
-msgid "    paru <package(s)>"
-msgstr "    paru <paket(i)>"
+msgid "    bah <package(s)>"
+msgstr "    bah <paket(i)>"
 
 #: src/help.rs:9
 msgid "Pacman operations:"
 msgstr "Pacman operacije:"
 
 #: src/help.rs:10
-msgid "    paru {-h --help}"
-msgstr "    paru {-h --help}"
+msgid "    bah {-h --help}"
+msgstr "    bah {-h --help}"
 
 #: src/help.rs:11
-msgid "    paru {-V --version}"
-msgstr "    paru {-V --version}"
+msgid "    bah {-V --version}"
+msgstr "    bah {-V --version}"
 
 #: src/help.rs:12
-msgid "    paru {-D --database}    <options> <package(s)>"
-msgstr "    paru {-D --database}    <opcije> <paket(i)>"
+msgid "    bah {-D --database}    <options> <package(s)>"
+msgstr "    bah {-D --database}    <opcije> <paket(i)>"
 
 #: src/help.rs:13
-msgid "    paru {-F --files}       [options] [package(s)]"
-msgstr "    paru {-F --files}       [opcije] [paket(i)]"
+msgid "    bah {-F --files}       [options] [package(s)]"
+msgstr "    bah {-F --files}       [opcije] [paket(i)]"
 
 #: src/help.rs:14
-msgid "    paru {-Q --query}       [options] [package(s)]"
-msgstr "    paru {-Q --query}       [opcije] [paket(i)]"
+msgid "    bah {-Q --query}       [options] [package(s)]"
+msgstr "    bah {-Q --query}       [opcije] [paket(i)]"
 
 #: src/help.rs:15
-msgid "    paru {-R --remove}      [options] <package(s)>"
-msgstr "    paru {-R --remove}      [opcije] <paket(i)>"
+msgid "    bah {-R --remove}      [options] <package(s)>"
+msgstr "    bah {-R --remove}      [opcije] <paket(i)>"
 
 #: src/help.rs:16
-msgid "    paru {-S --sync}        [options] [package(s)]"
-msgstr "    paru {-S --sync}        [opcije] [paket(i)]"
+msgid "    bah {-S --sync}        [options] [package(s)]"
+msgstr "    bah {-S --sync}        [opcije] [paket(i)]"
 
 #: src/help.rs:17
-msgid "    paru {-T --deptest}     [options] [package(s)]"
-msgstr "    paru {-T --deptest}     [opcije] [paket(i)]"
+msgid "    bah {-T --deptest}     [options] [package(s)]"
+msgstr "    bah {-T --deptest}     [opcije] [paket(i)]"
 
 #: src/help.rs:18
-msgid "    paru {-U --upgrade}     [options] [file(s)]"
-msgstr "    paru {-U --upgrade}     [opcije] [datoteke]"
+msgid "    bah {-U --upgrade}     [options] [file(s)]"
+msgstr "    bah {-U --upgrade}     [opcije] [datoteke]"
 
 #: src/help.rs:20
 msgid "New operations:"
 msgstr "Nove operacije:"
 
 #: src/help.rs:21
-msgid "    paru {-P --show}        [options]"
-msgstr "    paru {-P --show}        [opcije]"
+msgid "    bah {-P --show}        [options]"
+msgstr "    bah {-P --show}        [opcije]"
 
 #: src/help.rs:22
-msgid "    paru {-G --getpkgbuild} [package(s)]"
-msgstr "    paru {-G --getpkgbuild} [paket(i)]"
+msgid "    bah {-G --getpkgbuild} [package(s)]"
+msgstr "    bah {-G --getpkgbuild} [paket(i)]"
 
 #: src/help.rs:23
 #, fuzzy
-msgid "    paru {-B --build}       [dir(s)]"
-msgstr "    paru {-P --show}        [opcije]"
+msgid "    bah {-B --build}       [dir(s)]"
+msgstr "    bah {-P --show}        [opcije]"
 
 #: src/help.rs:25
-msgid "If no arguments are provided 'paru -Syu' will be performed"
-msgstr "Ako je pokrento bez argumenata, pokreće se 'paru -Syu'"
+msgid "If no arguments are provided 'bah -Syu' will be performed"
+msgstr "Ako je pokrento bez argumenata, pokreće se 'bah -Syu'"
 
 #: src/help.rs:27
 msgid "Options without operation:"
@@ -440,7 +440,7 @@ msgid "    -a --aur               Assume targets are from the AUR"
 msgstr "    -a --aur               Pretpostavlja da su ciljevi iz AUR"
 
 #: src/help.rs:35
-msgid "    --mode      <mode>     Sets where paru looks for targets"
+msgid "    --mode      <mode>     Sets where bah looks for targets"
 msgstr ""
 
 #: src/help.rs:37

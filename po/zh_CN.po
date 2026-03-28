@@ -1,6 +1,6 @@
-# Paru Simplified Chinese translation
-# Copyright (C) YEAR THE paru'S COPYRIGHT HOLDER
-# This file is distributed under the same license as the paru package.
+# bah Simplified Chinese translation
+# Copyright (C) YEAR THE bah'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the bah package.
 #
 # Previous Translators
 # Yufan You <ouuansteve@gmail.com> , 2021\n"
@@ -10,8 +10,8 @@
 # clsty <celestial.y@outlook.com> , 2023\n"
 msgid ""
 msgstr ""
-"Project-Id-Version: paru  1.11.2\n"
-"Report-Msgid-Bugs-To: https://github.com/Morganamilo/paru\n"
+"Project-Id-Version: bah  1.11.2\n"
+"Report-Msgid-Bugs-To: https://github.com/Morganamilo/bah\n"
 "POT-Creation-Date: 2026-01-08 17:40+0000\n"
 "PO-Revision-Date: 2023-12-31 22:59+0800\n"
 "Last-Translator: clsty <celestial.y@outlook.com>\n"
@@ -327,76 +327,76 @@ msgid "Usage:"
 msgstr "用法："
 
 #: src/help.rs:5
-msgid "    paru"
-msgstr "    paru"
+msgid "    bah"
+msgstr "    bah"
 
 #: src/help.rs:6
-msgid "    paru <operation> [...]"
-msgstr "    paru <操作> [...]"
+msgid "    bah <operation> [...]"
+msgstr "    bah <操作> [...]"
 
 #: src/help.rs:7
-msgid "    paru <package(s)>"
-msgstr "    paru <(多个)软件包>"
+msgid "    bah <package(s)>"
+msgstr "    bah <(多个)软件包>"
 
 #: src/help.rs:9
 msgid "Pacman operations:"
 msgstr "Pacman 操作："
 
 #: src/help.rs:10
-msgid "    paru {-h --help}"
-msgstr "    paru {-h --help}"
+msgid "    bah {-h --help}"
+msgstr "    bah {-h --help}"
 
 #: src/help.rs:11
-msgid "    paru {-V --version}"
-msgstr "    paru {-V --version}"
+msgid "    bah {-V --version}"
+msgstr "    bah {-V --version}"
 
 #: src/help.rs:12
-msgid "    paru {-D --database}    <options> <package(s)>"
-msgstr "    paru {-D --database}    <选项> <(多个)软件包>"
+msgid "    bah {-D --database}    <options> <package(s)>"
+msgstr "    bah {-D --database}    <选项> <(多个)软件包>"
 
 #: src/help.rs:13
-msgid "    paru {-F --files}       [options] [package(s)]"
-msgstr "    paru {-F --files}       [选项] [(多个)软件包]"
+msgid "    bah {-F --files}       [options] [package(s)]"
+msgstr "    bah {-F --files}       [选项] [(多个)软件包]"
 
 #: src/help.rs:14
-msgid "    paru {-Q --query}       [options] [package(s)]"
-msgstr "    paru {-Q --query}       [选项] [(多个)软件包]"
+msgid "    bah {-Q --query}       [options] [package(s)]"
+msgstr "    bah {-Q --query}       [选项] [(多个)软件包]"
 
 #: src/help.rs:15
-msgid "    paru {-R --remove}      [options] <package(s)>"
-msgstr "    paru {-R --remove}      [选项] <(多个)软件包>"
+msgid "    bah {-R --remove}      [options] <package(s)>"
+msgstr "    bah {-R --remove}      [选项] <(多个)软件包>"
 
 #: src/help.rs:16
-msgid "    paru {-S --sync}        [options] [package(s)]"
-msgstr "    paru {-S --sync}        [选项] [(多个)软件包]"
+msgid "    bah {-S --sync}        [options] [package(s)]"
+msgstr "    bah {-S --sync}        [选项] [(多个)软件包]"
 
 #: src/help.rs:17
-msgid "    paru {-T --deptest}     [options] [package(s)]"
-msgstr "    paru {-T --deptest}     [选项] [(多个)软件包]"
+msgid "    bah {-T --deptest}     [options] [package(s)]"
+msgstr "    bah {-T --deptest}     [选项] [(多个)软件包]"
 
 #: src/help.rs:18
-msgid "    paru {-U --upgrade}     [options] [file(s)]"
-msgstr "    paru {-U --upgrade}     [选项] [(多个)文件]"
+msgid "    bah {-U --upgrade}     [options] [file(s)]"
+msgstr "    bah {-U --upgrade}     [选项] [(多个)文件]"
 
 #: src/help.rs:20
 msgid "New operations:"
 msgstr "新操作："
 
 #: src/help.rs:21
-msgid "    paru {-P --show}        [options]"
-msgstr "    paru {-P --show}        [选项]"
+msgid "    bah {-P --show}        [options]"
+msgstr "    bah {-P --show}        [选项]"
 
 #: src/help.rs:22
-msgid "    paru {-G --getpkgbuild} [package(s)]"
-msgstr "    paru {-G --getpkgbuild} [(多个)软件包]"
+msgid "    bah {-G --getpkgbuild} [package(s)]"
+msgstr "    bah {-G --getpkgbuild} [(多个)软件包]"
 
 #: src/help.rs:23
-msgid "    paru {-B --build}       [dir(s)]"
-msgstr "    paru {-B --build}       [(多个)目录]"
+msgid "    bah {-B --build}       [dir(s)]"
+msgstr "    bah {-B --build}       [(多个)目录]"
 
 #: src/help.rs:25
-msgid "If no arguments are provided 'paru -Syu' will be performed"
-msgstr "如果未提供任何参数，则将执行 'paru -Syu'"
+msgid "If no arguments are provided 'bah -Syu' will be performed"
+msgstr "如果未提供任何参数，则将执行 'bah -Syu'"
 
 #: src/help.rs:27
 msgid "Options without operation:"
@@ -429,8 +429,8 @@ msgid "    -a --aur               Assume targets are from the AUR"
 msgstr "    -a --aur                假设目标来自 AUR"
 
 #: src/help.rs:35
-msgid "    --mode      <mode>     Sets where paru looks for targets"
-msgstr "    --mode      <模式>      设置 paru 寻找目标的位置"
+msgid "    --mode      <mode>     Sets where bah looks for targets"
+msgstr "    --mode      <模式>      设置 bah 寻找目标的位置"
 
 #: src/help.rs:37
 msgid ""

@@ -204,6 +204,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "bah"
+version = "2.1.0"
+dependencies = [
+ "alpm",
+ "alpm-utils",
+ "ansiterm",
+ "anyhow",
+ "async-trait",
+ "aur-depends",
+ "aur-fetch",
+ "bitflags 2.10.0",
+ "chrono",
+ "cini",
+ "dirs",
+ "env_logger",
+ "flate2",
+ "futures",
+ "globset",
+ "htmlescape",
+ "indicatif",
+ "log",
+ "nix",
+ "pacmanconf",
+ "raur",
+ "regex",
+ "reqwest",
+ "rss",
+ "scraper",
+ "serde",
+ "serde_json",
+ "signal-hook",
+ "smart-default",
+ "srcinfo",
+ "tempfile",
+ "terminal_size",
+ "tokio",
+ "toml",
+ "tr",
+ "unicode-width",
+ "url",
+]
+
+[[package]]
 name = "base64"
 version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1471,49 +1514,6 @@ dependencies = [
  "redox_syscall",
  "smallvec",
  "windows-link",
-]
-
-[[package]]
-name = "paru"
-version = "2.1.0"
-dependencies = [
- "alpm",
- "alpm-utils",
- "ansiterm",
- "anyhow",
- "async-trait",
- "aur-depends",
- "aur-fetch",
- "bitflags 2.10.0",
- "chrono",
- "cini",
- "dirs",
- "env_logger",
- "flate2",
- "futures",
- "globset",
- "htmlescape",
- "indicatif",
- "log",
- "nix",
- "pacmanconf",
- "raur",
- "regex",
- "reqwest",
- "rss",
- "scraper",
- "serde",
- "serde_json",
- "signal-hook",
- "smart-default",
- "srcinfo",
- "tempfile",
- "terminal_size",
- "tokio",
- "toml",
- "tr",
- "unicode-width",
- "url",
 ]
 
 [[package]]

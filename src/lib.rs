@@ -67,11 +67,11 @@ macro_rules! printtr {
 }
 
 fn debug_enabled() -> bool {
-    env::var("PARU_DEBUG").as_deref().unwrap_or("0") != "0"
+    env::var("bah_DEBUG").as_deref().unwrap_or("0") != "0"
 }
 
 fn alpm_debug_enabled() -> bool {
-    debug_enabled() && env::var("PARU_ALPM_DEBUG").is_ok_and(|v| v != "0")
+    debug_enabled() && env::var("bah_ALPM_DEBUG").is_ok_and(|v| v != "0")
 }
 
 fn print_error(color: Style, err: Error) {

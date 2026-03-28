@@ -36,7 +36,7 @@ pub fn expand_subcommands(args: Vec<String>) -> Vec<String> {
 
         "install" => prepend(&["-S"], rest),
 
-        // Full system refresh + upgrade (same idea as bare `paru`).
+        // Full system refresh + upgrade (same idea as bare `bah`).
         "update" | "upgrade" | "sync" | "up" => {
             if rest.is_empty() {
                 vec!["-Syu".to_string()]
@@ -81,7 +81,7 @@ pub fn expand_subcommands(args: Vec<String>) -> Vec<String> {
 
         "version" => vec!["-V".to_string()],
 
-        // Implicit search: all tokens are search terms (parity with `paru -Ss a b`).
+        // Implicit search: all tokens are search terms (parity with `bah -Ss a b`).
         _ => prepend(&["-S", "-s"], std::iter::once(head).chain(rest.into_iter()).collect()),
     }
 }

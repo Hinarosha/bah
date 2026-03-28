@@ -1721,7 +1721,7 @@ pub fn review(config: &Config, fetch: &aur_fetch::Fetch, pkgs: &[&str]) -> Resul
             }
 
             if config.save_changes {
-                fetch.commit(pkgs, "paru save changes")?;
+                fetch.commit(pkgs, "bah save changes")?;
             }
         } else {
             let unseen = fetch.unseen(pkgs)?;
@@ -1730,13 +1730,13 @@ pub fn review(config: &Config, fetch: &aur_fetch::Fetch, pkgs: &[&str]) -> Resul
             let diffs = fetch.diff(&has_diff, config.color.enabled)?;
 
             if printed {
-                let pager_unconfigured = var("PARU_PAGER").is_err() && var("PAGER").is_err();
+                let pager_unconfigured = var("bah_PAGER").is_err() && var("PAGER").is_err();
                 let pager = if has_command("less") { "less" } else { "cat" };
 
                 let pager = config
                     .pager_cmd
                     .clone()
-                    .or_else(|| var("PARU_PAGER").ok())
+                    .or_else(|| var("bah_PAGER").ok())
                     .or_else(|| var("PAGER").ok())
                     .unwrap_or_else(|| pager.to_string());
 

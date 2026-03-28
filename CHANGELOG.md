@@ -1,6 +1,6 @@
 # Changelog
 
-## Paru v2.1.0 (2025-07-08)
+## bah v2.1.0 (2025-07-08)
 
 ### Added
 
@@ -41,7 +41,7 @@
 - Update hu locale #1359 #1274 #1263
 - Add uk locale #1352
 
-## Paru v2.0.4 (2024-09-20)
+## bah v2.0.4 (2024-09-20)
 
 ### Added
 
@@ -61,13 +61,13 @@
 - Updated pt_BR locale #1175
 - Updated hu locale #1235
 
-## Paru v2.0.3 (2024-03-13)
+## bah v2.0.3 (2024-03-13)
 
 ### Fixed
 
 - Fix build on arm c096bb
 
-## Paru v2.0.2 (2024-03-13)
+## bah v2.0.2 (2024-03-13)
 
 ### Added
 
@@ -93,7 +93,7 @@
 - Update es locale #1117
 - Update zh_TW locale #1111
 
-## Paru v2.0.1 (2023-12-01)
+## bah v2.0.1 (2023-12-01)
 
 ### Added
 
@@ -110,9 +110,9 @@
 
 - Update sv locale #1088
 
-## Paru v2.0.0 (2023-11-26)
+## bah v2.0.0 (2023-11-26)
 
-Paru v2.0.0 comes after a long time of no releases, mostly due to a lack of free time
+bah v2.0.0 comes after a long time of no releases, mostly due to a lack of free time
 and a lot of changes that needed a lot of work to get done.
 
 This update brings a lot of big changes, mostly aimed at power users, and a handul of general
@@ -126,21 +126,21 @@ This changelog won't include minor changes as there are a lot.
 ### PKGBUILD Repos
 
 The main feature of this release is properly integrating non aur pkgbuilds into the build
-engine. You can now add pkgbuild repos to your paru.conf in the form of:
+engine. You can now add pkgbuild repos to your bah.conf in the form of:
 
 ```
 [repo_name]
 Url = https://path/to/git/repo
 ```
 
-Then syncing the repo with `paru -Sy --pkgbuilds`.
+Then syncing the repo with `bah -Sy --pkgbuilds`.
 
 You can also specify 'Path =' instead to point to a pkgbuild repo on disk.
 
-paru will then recognise this repo as a source of pkgbuilds just like the AUR.
+bah will then recognise this repo as a source of pkgbuilds just like the AUR.
 
 ```
-paru -S foo
+bah -S foo
 ```
 
 pkgbuild repos have a higher priority than the AUR so this can also be used to shadow AUR
@@ -154,17 +154,17 @@ there's an invisible:
 Path = .
 ```
 
-in your paru.conf.
+in your bah.conf.
 
-This allows doing `paru -S ./foo` where `foo` is the name of a package (not path) under the
+This allows doing `bah -S ./foo` where `foo` is the name of a package (not path) under the
 current directory. this means if you have a bunch of pkgbuilds in a directory that depend on
-each other you can build one with `paru -S ./foo` and paru will solve and build the dependencies
+each other you can build one with `bah -S ./foo` and bah will solve and build the dependencies
 across pkgbuilds.
 
-Previously `paru -U` could be used to build a pkgbuild in the current directory. This has been
-renamed to `paru -B <dirs>...` allowing you to specify multiple pkgbuilds to build at once.
+Previously `bah -U` could be used to build a pkgbuild in the current directory. This has been
+renamed to `bah -B <dirs>...` allowing you to specify multiple pkgbuilds to build at once.
 
-See `paru.conf(5)` for more information on this.
+See `bah.conf(5)` for more information on this.
 
 ### Chroot
 
@@ -172,21 +172,21 @@ See `paru.conf(5)` for more information on this.
 
 ### --interactive
 
-`paru foo` has always been there for interactive search and install. There is now `--interactive`
+`bah foo` has always been there for interactive search and install. There is now `--interactive`
 which works for other operactions.
 
-- `paru foo` is an alias for `paru -S --interactive foo`
-- `paru -R --interactive foo` can be used for an interactive remove.
-- `paru -Ss/-Qs --interactive foo` will give an interactive prompt then print the chosen packages so they can be piped to other commands.
+- `bah foo` is an alias for `bah -S --interactive foo`
+- `bah -R --interactive foo` can be used for an interactive remove.
+- `bah -Ss/-Qs --interactive foo` will give an interactive prompt then print the chosen packages so they can be piped to other commands.
 
 ### Provides
 
-Provide searching is now better and is now enabled in the default paru.conf. You probably
-want to uncomment this option if you have an existing paru.conf.
+Provide searching is now better and is now enabled in the default bah.conf. You probably
+want to uncomment this option if you have an existing bah.conf.
 
 ### Contributors
 
-Thanks to every one who has contributed code and translations for paru.
+Thanks to every one who has contributed code and translations for bah.
 And thanks to every one who has decided to sponsor the project.
 
 ### Added
@@ -210,7 +210,7 @@ And thanks to every one who has decided to sponsor the project.
 - Move devel.toml to $XDG_STATE_HOME
 - Dates now use the local time zone
 - Fallback to cat when less is not available
-- No confirm pacman install after final paru confirmation
+- No confirm pacman install after final bah confirmation
 - Copy DB into chroot before update
 - Disable -w/--downloadonly when installing aur packages
 - Allow chroot without local repo
@@ -222,7 +222,7 @@ And thanks to every one who has decided to sponsor the project.
 - Fix separate install of split packages
 - Create local repo when refreshing
 - Respect makepkg config outside of chroot
-- Fix no sudo when running paru -Sc
+- Fix no sudo when running bah -Sc
 - Fix --redownload=yes
 - Don't try set install reason if package didn't actually install
 - colour version when printing install
@@ -232,11 +232,11 @@ And thanks to every one who has decided to sponsor the project.
 - Don't review when no packages
 - Fix aur packages not being case sensitive
 
-## Paru v1.11.2 (2022-11-05)
+## bah v1.11.2 (2022-11-05)
 
 Rebuild for openssl 3
 
-## Paru v1.11.1 (2022-07-06)
+## bah v1.11.1 (2022-07-06)
 
 ### Fixed
 
@@ -250,7 +250,7 @@ Rebuild for openssl 3
 - Update zh_CN locale #786
 - Update zh_TW locale #784
 
-## Paru v1.11.0 (2022-06-24)
+## bah v1.11.0 (2022-06-24)
 
 ### Added
 
@@ -264,7 +264,7 @@ Rebuild for openssl 3
 
 ### Fixed
 
-- Fix typo in paru.conf man page #709
+- Fix typo in bah.conf man page #709
 - Include sudo flags in sudo loop 3620089
 - Properly check for deps via provides with batch install a90ced5
 - Don't check check_depends during batch install if --nocheck 386633d
@@ -287,7 +287,7 @@ Rebuild for openssl 3
 
 - Add triple dots to upgrade search messages #769
 
-## Paru v1.10.0 (2022-03-24)
+## bah v1.10.0 (2022-03-24)
 
 ### Added
 
@@ -304,7 +304,7 @@ Rebuild for openssl 3
 - Update ko_KR locale #680
 - Update pt_BR locale #687
 
-## Paru v1.9.3 (2022-02-16)
+## bah v1.9.3 (2022-02-16)
 
 ### Added
 
@@ -330,11 +330,11 @@ Rebuild for openssl 3
 - Update es locale #645
 - Update zh_CN locale #675
 
-## Paru v1.9.2 (2021-12-09)
+## bah v1.9.2 (2021-12-09)
 
 ## Fixed
 
-- Fix paru not actually waiting on children properly e336648
+- Fix bah not actually waiting on children properly e336648
 - Fix typo #608 f8e0888
 
 ### Localization
@@ -344,11 +344,11 @@ Rebuild for openssl 3
 - Update ru locale #607
 - Update pt_br locale #605
 
-## Paru v1.9.1 (2021-11-26)
+## bah v1.9.1 (2021-11-26)
 
 ### Fixed
 
-- Make paru -G return a correct exit code #601
+- Make bah -G return a correct exit code #601
 - Fix manpage wording #598
 - Add docs for -Po and --regex 3ebff0f
 - Remove Stale develinfo when package changes source Remove dbaec6c
@@ -362,7 +362,7 @@ Rebuild for openssl 3
 
 - Update pt_br locale #568
 
-## Paru v1.9.0 (2021-11-01)
+## bah v1.9.0 (2021-11-01)
 
 ### Added
 
@@ -385,7 +385,7 @@ Rebuild for openssl 3
 - Add ko locale #565
 - Update de locale #513
 
-## Paru v1.8.2 (2021-08-18)
+## bah v1.8.2 (2021-08-18)
 
 ### Fixed
 
@@ -399,7 +399,7 @@ Rebuild for openssl 3
 - Update fr locale #510
 - Update ja locale #504
 
-## Paru v1.8.1 (2021-08-12)
+## bah v1.8.1 (2021-08-12)
 
 ### Fixed
 
@@ -418,13 +418,13 @@ Rebuild for openssl 3
 - Update de locale #487
 - Update pt_BR locale #496
 
-## Paru v1.8.0 (2021-08-03)
+## bah v1.8.0 (2021-08-03)
 
 ### Added
 
 - Localization support 8667e98 5b1ff38
 - Added ability to static link libalpm a39641c
-- Add [env] section in paru.conf daf225f
+- Add [env] section in bah.conf daf225f
 
 ### Fixed
 
@@ -459,7 +459,7 @@ Rebuild for openssl 3
 - Add sv locale #460
 - Add hi locale #463
 
-## Paru v1.7.3 (2021-06-24)
+## bah v1.7.3 (2021-06-24)
 
 ### Fixed
 
@@ -473,7 +473,7 @@ Rebuild for openssl 3
 - Retry aur search when one targ fails 4020507
 - Only add packages to be installed to local repos 23f0a8c
 
-## Paru v1.7.2 (2021-06-08)
+## bah v1.7.2 (2021-06-08)
 
 ### Fixed
 
@@ -484,13 +484,13 @@ Rebuild for openssl 3
 
 - Include #AurOnly in the example config 8f1d6d9
 
-## Paru v1.7.1 (2021-06-03)
+## bah v1.7.1 (2021-06-03)
 
 ### Fixed
 
 - Fix panic in provider menu 73ecc7
 
-## Paru v1.7.0 (2021-05-31)
+## bah v1.7.0 (2021-05-31)
 
 ### Fixed
 
@@ -525,14 +525,14 @@ Rebuild for openssl 3
 - Expect local repos to be user writable 4d224b8
 - -C will create the chroot if it does not exist 5b6730f
 
-## Paru v1.6.1 (2021-05-04)
+## bah v1.6.1 (2021-05-04)
 
 ### Fixed
 
 - Fix out of date packages not being shown dca010e
 - Fix typo in man page #359
 
-## Paru v1.6.0 (2021-05-03)
+## bah v1.6.0 (2021-05-03)
 
 ### Fixed
 
@@ -545,7 +545,7 @@ Rebuild for openssl 3
 
 ### Added
 
-- Paru now sets the user agent for aur requests 841ebb5
+- bah now sets the user agent for aur requests 841ebb5
 - support latest pacman-git 2cbe4ed
 
 ### Removed
@@ -558,7 +558,7 @@ Rebuild for openssl 3
 - --gendb: don't update already existing entries 49eb22
 - Better error message when AUR does not return 400 #351
 
-## Paru v1.5.1 (2021-04-13)
+## bah v1.5.1 (2021-04-13)
 
 ### Fixed
 
@@ -569,17 +569,17 @@ Rebuild for openssl 3
 
 ### Changed
 
-- Use makepkg to generate srcinfo with paru -U #307
+- Use makepkg to generate srcinfo with bah -U #307
 - Don't noconfirm -Ui 9d9cdb1
 - Use -d/--delete to clean the whole package instead of -Scc edd43ef
 
-## Paru v1.5.0 (2021-03-30)
+## bah v1.5.0 (2021-03-30)
 
 ### Fixed
 
 - Fix typos #283 #276
 - Fix packages being marked as explicit when they shouldn't 47c4caf
-- Fix PAGER having higher priority than PARU_PAGER 82a7326
+- Fix PAGER having higher priority than bah_PAGER 82a7326
 - Fix pacman error message not including sudo #297
 
 ### Added
@@ -592,7 +592,7 @@ Rebuild for openssl 3
 - Handle devel packages in local repo but not installed c5dfff2 c698f2e
 - Don't enable provider menu on sysupgrade c698f2e
 
-## Paru v1.4.0 (2021-03-14)
+## bah v1.4.0 (2021-03-14)
 
 ### Fixed
 
@@ -607,7 +607,7 @@ Rebuild for openssl 3
 - Added verbose search (-Sss) #266
 - Warn when using chroot without devtools 06ff12a
 
-## Paru v1.3.0 (2021-02-19)
+## bah v1.3.0 (2021-02-19)
 
 ### Fixed
 
@@ -621,10 +621,10 @@ Rebuild for openssl 3
 ### Added
 
 - Add pager option ca9bfea
-- Add PARU_PAGER 097433d
+- Add bah_PAGER 097433d
 - Allow setting custom sudo loop behaviour c165166
 - Add --skipreview a6c8511
-- Add paru -U e54d635
+- Add bah -U e54d635
 
 ### Changed
 
@@ -633,15 +633,15 @@ Rebuild for openssl 3
 - Improve local repo documentation 
 
 
-## Paru v1.2.2 (2021-02-03)
+## bah v1.2.2 (2021-02-03)
 
 ### Fixed
 
 - Fix upgrademenu padding wrong with local repo 3198feb
 - Fix chroot not installing repo packages f083096
-- Fix sigpipe killing paru during review 27733e3
+- Fix sigpipe killing bah during review 27733e3
 
-## Paru v1.2.1 (2021-02-02)
+## bah v1.2.1 (2021-02-02)
 
 ### Fixed
 
@@ -653,7 +653,7 @@ Rebuild for openssl 3
 
 - Add out of date info on -Ss 5e458eb
 
-## Paru v1.2.0 (2021-01-29)
+## bah v1.2.0 (2021-01-29)
 
 ### Fixed
 
@@ -678,11 +678,11 @@ Rebuild for openssl 3
 - --noconfirm also skips review #175
 - NoWarn now supports globbing #176
 
-## Paru v1.1.4 (2020-12-21)
+## bah v1.1.4 (2020-12-21)
 
 ### Fixed
 
-- Remove nonexistent topdown option from `paru.conf(5)` #124
+- Remove nonexistent topdown option from `bah.conf(5)` #124
 - Fix ignorepkg for devel pkgs ac0de9f
 - Fix rebuild not taking an arg a516eda
 
@@ -690,7 +690,7 @@ Rebuild for openssl 3
 
 - Add example for packages exclude in ask input #130
 
-## Paru v1.1.3 (2020-11-29)
+## bah v1.1.3 (2020-11-29)
 
 ### Fixed
 
@@ -699,9 +699,9 @@ Rebuild for openssl 3
 ### Changed
 
 - Wait for editor to exit before deleting view #110
-- Warn instead of error on unknown values in paru.conf 0e4e618
+- Warn instead of error on unknown values in bah.conf 0e4e618
 
-## Paru v1.1.2 (2020-11-18)
+## bah v1.1.2 (2020-11-18)
 
 ### Fixed
 
@@ -715,14 +715,14 @@ Rebuild for openssl 3
 - Do aur + devel upgrade concurrently 836bba8
 - Fix warnings not showing with upgrade menu fedddb6
 
-## Paru v1.1.1 (2020-11-12)
+## bah v1.1.1 (2020-11-12)
 
 ### Fixed
 
 - Fix numbers in upgrade menu being printed improperly for devel packages #100
 - Fix `--batflags` zsh completion #98
 
-## Paru v1.1.0 (2020-11-12)
+## bah v1.1.0 (2020-11-12)
 
 ### Fixed
 
@@ -732,7 +732,7 @@ Rebuild for openssl 3
 - Don't try to install non existing devel packages 5e910d9
 - Fix clean checking for wrong file type e9a260e
 - Try and make pkg writable before deleting 70676bf
-- Remove dashes from InstallDebug in paru.conf.5 #86
+- Remove dashes from InstallDebug in bah.conf.5 #86
 - Add missing asp completion 8e19638
 -  Fix -Qu return value not always being correct 0b791bc
 
@@ -749,7 +749,7 @@ Rebuild for openssl 3
 - Always pass ignored packages to pacman 591d593
 - Flip upgrade menu 79a4ab7
 
-## Paru v1.0.2 (2020-11-02)
+## bah v1.0.2 (2020-11-02)
 
 ### Fixed
 
@@ -769,7 +769,7 @@ Rebuild for openssl 3
 
 - News now returns 1 when there is no new news 792e15c
 
-## Paru v1.0.1 (2020-10-30)
+## bah v1.0.1 (2020-10-30)
 
 ### Fixed
 
@@ -778,7 +778,7 @@ Rebuild for openssl 3
 - Fix `-G` using lcoaldb instead of syncdb d34d3b0
 - Fix warnings not printing when there are no upgrades 4b14b50
 - Fix `--upgrademenu` printing the wrong local version #37
-- Fix `paru <target>` trying to install all packages when input is empty ba00b9f
+- Fix `bah <target>` trying to install all packages when input is empty ba00b9f
 - Fix upgrade menu not showing sometimes 21e0b19
 - Fix missing =all option to redownload/rebuild c2fc530
 - Fix --overwrite not expecting an arg 9253841
@@ -789,7 +789,7 @@ Rebuild for openssl 3
 
 ### Added
 
-- Add `PARU_CONF` to configure paru's config file location eb9e1b1
+- Add `bah_CONF` to configure bah's config file location eb9e1b1
 
 ### Changed
 
@@ -799,7 +799,7 @@ Rebuild for openssl 3
 - `--gendb` will now continue on srcinfo parse errors 73eb796
 - Don't prompt to continue install when pacman is going to prompt 9663f84
 
-## Paru v1.0.0 (2020-10-28) - changes from yay
+## bah v1.0.0 (2020-10-28) - changes from yay
 
 ### Added
 
@@ -808,7 +808,7 @@ Rebuild for openssl 3
 - Added --installDebug
 - Added NoWarn
 - Added syntax highlighting to pkgbuild printing
-- Auto detection for pacman-git. Paru will build against pacman-git's API
+- Auto detection for pacman-git. bah will build against pacman-git's API
 
 ### Removed
 
@@ -821,7 +821,7 @@ Rebuild for openssl 3
 ### Changed
 
 - List based flags now append instead of overwriting existing settings
-- Packages are now cloned to ~/.cache/paru/clone by default
+- Packages are now cloned to ~/.cache/bah/clone by default
 - Use asp for repo pkgbuilds
 - Improve news printing
 - Formatting changes to be more pacman like

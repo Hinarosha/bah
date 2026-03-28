@@ -24,7 +24,7 @@ RUN meson setup \
 RUN ninja -C build
 RUN ninja -C build install
 
-WORKDIR /paru
+WORKDIR /bah
 
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
@@ -38,4 +38,4 @@ COPY ../ .
 RUN --mount=type=tmpfs,target=/usr/local/cargo/git ./scripts/dist
 
 FROM scratch AS export-stage
-COPY --from=build-stage /paru/paru.tar.zst /
+COPY --from=build-stage /bah/bah.tar.zst /

@@ -39,16 +39,16 @@ _pacman_pkg() {
   )"
 }
 
-_paru_pkg() {
+_bah_pkg() {
   [ -z "$cur" ] && _pacman_pkg Slq && return
-  _arch_compgen "$(paru -Pc)"
+  _arch_compgen "$(bah -Pc)"
 }
 
 _pacman_repo_list() {
-  _arch_compgen "$(pacman-conf --repo-list)"$'\n'"$(paru -Sl --pkgbuilds | cut -d ' ' -f1 | uniq)"
+  _arch_compgen "$(pacman-conf --repo-list)"$'\n'"$(bah -Sl --pkgbuilds | cut -d ' ' -f1 | uniq)"
 }
 
-_paru() {
+_bah() {
   compopt -o default
   local common core cur database files prev query remove sync upgrade o
   local show getpkgbuild
@@ -113,13 +113,13 @@ _paru() {
         { _arch_incomp 'g groups' && _pacman_pkg Sg; } ||
           { _arch_incomp 'l list' && _pacman_repo_list; } ||
           { _arch_incomp 's search' && compopt +o default; } ||
-          _paru_pkg
+          _bah_pkg
         ;;
       U)
         _pacman_file
         ;;
       G)
-        _paru_pkg
+        _bah_pkg
         ;;
       esac
   fi
@@ -131,6 +131,6 @@ _pacman_file() {
   _filedir 'pkg.tar*'
 }
 
-complete -F _paru paru
+complete -F _bah bah
 
 # ex:et ts=2 sw=2 ft=sh

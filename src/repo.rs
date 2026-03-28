@@ -84,7 +84,7 @@ pub fn add<P: AsRef<Path>, S: AsRef<OsStr>>(
     if err.is_err() {
         eprintln!(
             "Could not add packages to repo:
-    paru now expects local repos to be writable as your user:
+    bah now expects local repos to be writable as your user:
     You should chown/chmod your repos to be writable by you:
     chown -R {}: {}",
             user.name,

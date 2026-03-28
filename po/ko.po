@@ -1,6 +1,6 @@
-# Paru Korean translation
-# Copyright (C) YEAR THE paru'S COPYRIGHT HOLDER
-# This file is distributed under the same license as the paru package.
+# bah Korean translation
+# Copyright (C) YEAR THE bah'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the bah package.
 #
 # ponte-vecchio <zkogdxdkur@p.monash.edu>, 2022.
 # Junghee Lee <daemul72@gmail.com>, 2025.
@@ -8,8 +8,8 @@
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: paru VERSION\n"
-"Report-Msgid-Bugs-To: https://github.com/Morganamilo/paru\n"
+"Project-Id-Version: bah VERSION\n"
+"Report-Msgid-Bugs-To: https://github.com/Morganamilo/bah\n"
 "POT-Creation-Date: 2026-01-08 17:40+0000\n"
 "PO-Revision-Date: 2025-11-07 23:11+0900\n"
 "Last-Translator: Junghee Lee <daemul72@gmail.com>\n"
@@ -325,76 +325,76 @@ msgid "Usage:"
 msgstr "사용법: "
 
 #: src/help.rs:5
-msgid "    paru"
-msgstr "    paru"
+msgid "    bah"
+msgstr "    bah"
 
 #: src/help.rs:6
-msgid "    paru <operation> [...]"
-msgstr "    paru <명령어> [...]"
+msgid "    bah <operation> [...]"
+msgstr "    bah <명령어> [...]"
 
 #: src/help.rs:7
-msgid "    paru <package(s)>"
-msgstr "    paru <꾸러미>"
+msgid "    bah <package(s)>"
+msgstr "    bah <꾸러미>"
 
 #: src/help.rs:9
 msgid "Pacman operations:"
 msgstr "Pacman 명령어:"
 
 #: src/help.rs:10
-msgid "    paru {-h --help}"
-msgstr "    paru {-h --help}"
+msgid "    bah {-h --help}"
+msgstr "    bah {-h --help}"
 
 #: src/help.rs:11
-msgid "    paru {-V --version}"
-msgstr "    paru {-V --version}"
+msgid "    bah {-V --version}"
+msgstr "    bah {-V --version}"
 
 #: src/help.rs:12
-msgid "    paru {-D --database}    <options> <package(s)>"
-msgstr "    paru {-D --database}    <옵션> <꾸러미>"
+msgid "    bah {-D --database}    <options> <package(s)>"
+msgstr "    bah {-D --database}    <옵션> <꾸러미>"
 
 #: src/help.rs:13
-msgid "    paru {-F --files}       [options] [package(s)]"
-msgstr "    paru {-F --files}       [옵션] [꾸러미]"
+msgid "    bah {-F --files}       [options] [package(s)]"
+msgstr "    bah {-F --files}       [옵션] [꾸러미]"
 
 #: src/help.rs:14
-msgid "    paru {-Q --query}       [options] [package(s)]"
-msgstr "    paru {-Q --query}       [옵션] [꾸러미]"
+msgid "    bah {-Q --query}       [options] [package(s)]"
+msgstr "    bah {-Q --query}       [옵션] [꾸러미]"
 
 #: src/help.rs:15
-msgid "    paru {-R --remove}      [options] <package(s)>"
-msgstr "    paru {-R --remove}      [옵션] <꾸러미>"
+msgid "    bah {-R --remove}      [options] <package(s)>"
+msgstr "    bah {-R --remove}      [옵션] <꾸러미>"
 
 #: src/help.rs:16
-msgid "    paru {-S --sync}        [options] [package(s)]"
-msgstr "    paru {-S --sync}        [옵션] [꾸러미]"
+msgid "    bah {-S --sync}        [options] [package(s)]"
+msgstr "    bah {-S --sync}        [옵션] [꾸러미]"
 
 #: src/help.rs:17
-msgid "    paru {-T --deptest}     [options] [package(s)]"
-msgstr "    paru {-T --deptest}     [옵션] [꾸러미]"
+msgid "    bah {-T --deptest}     [options] [package(s)]"
+msgstr "    bah {-T --deptest}     [옵션] [꾸러미]"
 
 #: src/help.rs:18
-msgid "    paru {-U --upgrade}     [options] [file(s)]"
-msgstr "    paru {-U --upgrade}     [옵션] [파일]"
+msgid "    bah {-U --upgrade}     [options] [file(s)]"
+msgstr "    bah {-U --upgrade}     [옵션] [파일]"
 
 #: src/help.rs:20
 msgid "New operations:"
 msgstr "신규 명령어: "
 
 #: src/help.rs:21
-msgid "    paru {-P --show}        [options]"
-msgstr "    paru {-P --show}        [옵션]"
+msgid "    bah {-P --show}        [options]"
+msgstr "    bah {-P --show}        [옵션]"
 
 #: src/help.rs:22
-msgid "    paru {-G --getpkgbuild} [package(s)]"
-msgstr "    paru {-G --getpkgbuild} [꾸러미]"
+msgid "    bah {-G --getpkgbuild} [package(s)]"
+msgstr "    bah {-G --getpkgbuild} [꾸러미]"
 
 #: src/help.rs:23
-msgid "    paru {-B --build}       [dir(s)]"
-msgstr "    paru {-B --build}       [디렉터리]"
+msgid "    bah {-B --build}       [dir(s)]"
+msgstr "    bah {-B --build}       [디렉터리]"
 
 #: src/help.rs:25
-msgid "If no arguments are provided 'paru -Syu' will be performed"
-msgstr "만약 아무런 명령어도 지정되지 않는다면, 'paru -Syu'가 실행될 것입니다"
+msgid "If no arguments are provided 'bah -Syu' will be performed"
+msgstr "만약 아무런 명령어도 지정되지 않는다면, 'bah -Syu'가 실행될 것입니다"
 
 #: src/help.rs:27
 msgid "Options without operation:"
@@ -427,8 +427,8 @@ msgid "    -a --aur               Assume targets are from the AUR"
 msgstr "    -a --aur               지정된 꾸러미를 AUR에서만 조회"
 
 #: src/help.rs:35
-msgid "    --mode      <mode>     Sets where paru looks for targets"
-msgstr "    --mode      <모드>      Paru의 검색 대상 저장소 지정"
+msgid "    --mode      <mode>     Sets where bah looks for targets"
+msgstr "    --mode      <모드>      bah의 검색 대상 저장소 지정"
 
 #: src/help.rs:37
 msgid ""

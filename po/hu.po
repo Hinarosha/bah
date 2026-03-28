@@ -1,12 +1,12 @@
 # SOME DESCRIPTIVE TITLE.
-# Copyright (C) YEAR THE paru'S COPYRIGHT HOLDER
-# This file is distributed under the same license as the paru package.
+# Copyright (C) YEAR THE bah'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the bah package.
 # FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: paru  2.0.0\n"
-"Report-Msgid-Bugs-To: https://github.com/Morganamilo/paru\n"
+"Project-Id-Version: bah  2.0.0\n"
+"Report-Msgid-Bugs-To: https://github.com/Morganamilo/bah\n"
 "POT-Creation-Date: 2026-01-08 17:40+0000\n"
 "PO-Revision-Date: 2026-01-08 20:01+0100\n"
 "Last-Translator: summoner <summoner@disroot.org>\n"
@@ -324,76 +324,76 @@ msgid "Usage:"
 msgstr "Használat:"
 
 #: src/help.rs:5
-msgid "    paru"
-msgstr "    paru"
+msgid "    bah"
+msgstr "    bah"
 
 #: src/help.rs:6
-msgid "    paru <operation> [...]"
-msgstr "    paru <művelet> [...]"
+msgid "    bah <operation> [...]"
+msgstr "    bah <művelet> [...]"
 
 #: src/help.rs:7
-msgid "    paru <package(s)>"
-msgstr "    paru <csomag(ok)>"
+msgid "    bah <package(s)>"
+msgstr "    bah <csomag(ok)>"
 
 #: src/help.rs:9
 msgid "Pacman operations:"
 msgstr "Pacman műveletek:"
 
 #: src/help.rs:10
-msgid "    paru {-h --help}"
-msgstr "    paru {-h --help}"
+msgid "    bah {-h --help}"
+msgstr "    bah {-h --help}"
 
 #: src/help.rs:11
-msgid "    paru {-V --version}"
-msgstr "    paru {-V --version}"
+msgid "    bah {-V --version}"
+msgstr "    bah {-V --version}"
 
 #: src/help.rs:12
-msgid "    paru {-D --database}    <options> <package(s)>"
-msgstr "    paru {-D --database}    <kapcsolók> <csomag(ok)>"
+msgid "    bah {-D --database}    <options> <package(s)>"
+msgstr "    bah {-D --database}    <kapcsolók> <csomag(ok)>"
 
 #: src/help.rs:13
-msgid "    paru {-F --files}       [options] [package(s)]"
-msgstr "    paru {-F --files}       [kapcsolók] [csomag(ok)]"
+msgid "    bah {-F --files}       [options] [package(s)]"
+msgstr "    bah {-F --files}       [kapcsolók] [csomag(ok)]"
 
 #: src/help.rs:14
-msgid "    paru {-Q --query}       [options] [package(s)]"
-msgstr "    paru {-Q --query}       [kapcsolók] [csomag(ok)]"
+msgid "    bah {-Q --query}       [options] [package(s)]"
+msgstr "    bah {-Q --query}       [kapcsolók] [csomag(ok)]"
 
 #: src/help.rs:15
-msgid "    paru {-R --remove}      [options] <package(s)>"
-msgstr "    paru {-R --remove}      [kapcsolók] <csomag(ok)>"
+msgid "    bah {-R --remove}      [options] <package(s)>"
+msgstr "    bah {-R --remove}      [kapcsolók] <csomag(ok)>"
 
 #: src/help.rs:16
-msgid "    paru {-S --sync}        [options] [package(s)]"
-msgstr "    paru {-S --sync}        [kapcsolók] [csomag(ok)]"
+msgid "    bah {-S --sync}        [options] [package(s)]"
+msgstr "    bah {-S --sync}        [kapcsolók] [csomag(ok)]"
 
 #: src/help.rs:17
-msgid "    paru {-T --deptest}     [options] [package(s)]"
-msgstr "    paru {-T --deptest}     [kapcsolók] [csomag(ok)]"
+msgid "    bah {-T --deptest}     [options] [package(s)]"
+msgstr "    bah {-T --deptest}     [kapcsolók] [csomag(ok)]"
 
 #: src/help.rs:18
-msgid "    paru {-U --upgrade}     [options] [file(s)]"
-msgstr "    paru {-U --upgrade}     [kapcsolók] [fájl(ok)]"
+msgid "    bah {-U --upgrade}     [options] [file(s)]"
+msgstr "    bah {-U --upgrade}     [kapcsolók] [fájl(ok)]"
 
 #: src/help.rs:20
 msgid "New operations:"
 msgstr "Új műveletek:"
 
 #: src/help.rs:21
-msgid "    paru {-P --show}        [options]"
-msgstr "    paru {-P --show}        [kapcsolók]"
+msgid "    bah {-P --show}        [options]"
+msgstr "    bah {-P --show}        [kapcsolók]"
 
 #: src/help.rs:22
-msgid "    paru {-G --getpkgbuild} [package(s)]"
-msgstr "    paru {-G --getpkgbuild} [csomag(ok)]"
+msgid "    bah {-G --getpkgbuild} [package(s)]"
+msgstr "    bah {-G --getpkgbuild} [csomag(ok)]"
 
 #: src/help.rs:23
-msgid "    paru {-B --build}       [dir(s)]"
-msgstr "    paru {-B --build}       [könyvtár(ak)]"
+msgid "    bah {-B --build}       [dir(s)]"
+msgstr "    bah {-B --build}       [könyvtár(ak)]"
 
 #: src/help.rs:25
-msgid "If no arguments are provided 'paru -Syu' will be performed"
-msgstr "Ha nem kap argumentumokat, akkor a „paru -Syu” parancsot hajtja végre"
+msgid "If no arguments are provided 'bah -Syu' will be performed"
+msgstr "Ha nem kap argumentumokat, akkor a „bah -Syu” parancsot hajtja végre"
 
 #: src/help.rs:27
 msgid "Options without operation:"
@@ -433,8 +433,8 @@ msgstr ""
 "    -a --aur               Feltételezve, hogy minden cél az AUR-ból származik"
 
 #: src/help.rs:35
-msgid "    --mode      <mode>     Sets where paru looks for targets"
-msgstr "    --mode      <mode>     Beállítja, hogy a paru hol keressen célokat"
+msgid "    --mode      <mode>     Sets where bah looks for targets"
+msgstr "    --mode      <mode>     Beállítja, hogy a bah hol keressen célokat"
 
 #: src/help.rs:37
 msgid ""

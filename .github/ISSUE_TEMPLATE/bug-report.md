@@ -8,7 +8,7 @@ assignees: ''
 ---
 
 ### Affected Version
-**paru -V**
+**bah -V**
 
 ### Description
 **Have you checked previous issues?**
@@ -18,7 +18,7 @@ assignees: ''
 
 **Don't cut parts of the input always include the FULL thing**
 
-**paru.conf and pacman.conf are usually always relevant**
+**bah.conf and pacman.conf are usually always relevant**
 
 ```sh
 

@@ -1,28 +1,28 @@
-.TH "PARU" "8" "2021\-03\-24" "paru v1.10.0 "Paru Manual"
+.TH "bah" "8" "2021\-03\-24" "bah v1.10.0 "bah Manual"
 .nh
 .ad l
 .SH NAME
-paru \- AUR helper and pacman wrapper
+bah \- AUR helper and pacman wrapper
 
 .SH SYNOPSIS
-\fIparu\fR <operation> [options] [targets]
+\fIbah\fR <operation> [options] [targets]
 .sp
-\fIparu\fR <search terms>
+\fIbah\fR <search terms>
 .sp
-\fIparu\fR
+\fIbah\fR
 
 .SH DESCRIPTION
-Paru is an AUR helper written in Rust and based on the design of yay. It aims
+bah is an AUR helper written in Rust and based on the design of yay. It aims
 to be your standard pacman wrapping AUR helper with minimal interaction.
 
-Paru is a tool to easily build and install packages from the AUR, along with
-their dependencies. Paru also expands many of pacman's options making them
+bah is a tool to easily build and install packages from the AUR, along with
+their dependencies. bah also expands many of pacman's options making them
 AUR aware.
 
-This manpage only covers options unique to paru. For other options see
+This manpage only covers options unique to bah. For other options see
 \fBpacman(8)\fR.
 
-.SH PARU OPERATIONS
+.SH bah OPERATIONS
 .TP
 
 .TP
@@ -47,7 +47,7 @@ List local repos.
 Interactive shell to the chroot.
 
 .RE
-If no arguments are provided 'paru \-Syu' will be performed.
+If no arguments are provided 'bah \-Syu' will be performed.
 
 .SH EXTENDED PACMAN OPERATIONS
 .TP
@@ -56,11 +56,11 @@ These operations are extended to support both AUR and repo packages.
 
 .TP
 .B \-R
-Paru will also remove cached data about devel packages.
+bah will also remove cached data about devel packages.
 
 .TP
 .B \-Sc
-Paru will also clean cached AUR packages and any untracked files in the
+bah will also clean cached AUR packages and any untracked files in the
 cache. Cleaning untracked files will wipe any downloaded sources or
 built packages but will keep already downloaded VCS sources.
 -d or --delete can be passed to delete the entire package instead of just
@@ -74,12 +74,12 @@ regardless of SearchBy.
 
 .TP
 .B \-Sss
-Paru will also output a verbose search result when passing two
+bah will also output a verbose search result when passing two
 '--search' or '-s' flags.
 
 .TP
 .B \-S, \-Si, \-Sl, \-Ss, \-Su, \-Qu
-Paru will also handle AUR packages for these operations.
+bah will also handle AUR packages for these operations.
 
 .TP
 .B \-Ta
@@ -95,11 +95,11 @@ terms and prompts the user on which packages to install.
 .TP
 .B \-\-gendb
 Generate the development package database. This tracks the latest commit for
-each development package, so when there is a new commit paru will know to
+each development package, so when there is a new commit bah will know to
 update. This is done per package whenever a package is synced. This option
-should only be used when migrating to paru from another AUR helper.
+should only be used when migrating to bah from another AUR helper.
 
-This also causes paru to assume all current development packages are up to
+This also causes bah to assume all current development packages are up to
 date. Updates will then be detected on the next commit.
 
 .TP
@@ -148,7 +148,7 @@ A dependency could not be found.
 [WANTED BY] is the current dependency stack. The dependency stack will be empty if the package
 that could not be found was a target.
 
-Paru will exit 1 if any packages are missing.
+bah will exit 1 if any packages are missing.
 .RE
 .RE
 
@@ -265,7 +265,7 @@ Note that dependency resolution will still include repositoryi and AUR packages.
 
 .TP
 .B \-\-mode = aur|repo|pkgbuilds
-Select what kinds of packages paru should act on. Multiple modes can be selected
+Select what kinds of packages bah should act on. Multiple modes can be selected
 by separating them with a comma.
 
 Additionally, a, r and p may be used as short hand for aur, repo and pkgbuilds respectively.
@@ -279,15 +279,15 @@ Enable interactive package selection for -S, -R, -Ss and -Qs.
 
 For -S/-R this allows you to pick which packages to install/remove from a list.
 
-\fB paru <foo>\fR is an alias to \fBparu -S --interactive <foo>\fR.
+\fB bah <foo>\fR is an alias to \fBbah -S --interactive <foo>\fR.
 
 For -Ss/-Qs this allows you to interactively pick packages from the sync/local repos respectively.
-This is intended to be chained with other package tools so paru can handle the menu work while the
+This is intended to be chained with other package tools so bah can handle the menu work while the
 other tool in the pipeline just gets the packages.
 
 For example:
 
-\fB paru -Ssaq --interactive ruby | paru -Gc -\fR
+\fB bah -Ssaq --interactive ruby | bah -Gc -\fR
 
 will show AUR packages containing the term ruby, give the user an interactive menu to pick packages, then pipeline
 those packages into -Gc and display the comments.
@@ -334,7 +334,7 @@ The command to use for \fBgit\fR calls. This can be a command in
 .TP
 .B \-\-gitflags <flags>
 Passes arguments to git. These flags get passed to every instance where
-git is called by paru. Arguments are split on whitespace before being
+git is called by bah. Arguments are split on whitespace before being
 passed to git. Multiple arguments may be passed by supplying a space
 separated list that is quoted by the shell.
 
@@ -346,7 +346,7 @@ The command to use for \fBgpg\fR calls. This can be a command in
 .TP
 .B \-\-gpgflags <flags>
 Passes arguments to gpg. These flags get passed to every instance where
-gpg is called by paru. Arguments are split on whitespace before being
+gpg is called by bah. Arguments are split on whitespace before being
 passed to gpg. Multiple arguments may be passed by supplying a space
 separated list that is quoted by the shell.
 
@@ -361,7 +361,7 @@ persist unless committed.
 .TP
 .B \-\-fmflags <flags>
 Passes arguments to file manager. These flags get passed to every instance where
-file manager is called by paru. Arguments are split on whitespace before being
+file manager is called by bah. Arguments are split on whitespace before being
 passed to the file manager. Multiple arguments may be passed by supplying a space
 separated list that is quoted by the shell.
 
@@ -373,7 +373,7 @@ The command to use for \fBasp\fR calls. This can be a command in
 .TP
 .B \-\-mflags <flags>
 Passes arguments to makepkg. These flags get passed to every instance where
-makepkg is called by paru. Arguments are split on whitespace before being
+makepkg is called by bah. Arguments are split on whitespace before being
 passed to makepkg. Multiple arguments may be passed by supplying a space
 separated list that is quoted by the shell.
 
@@ -385,7 +385,7 @@ The command to use for \fBbat\fR calls. This can be a command in
 .TP
 .B \-\-batflags <flags>
 Passes arguments to bat. These flags get passed to every instance where
-bat is called by paru. Arguments are split on whitespace before being
+bat is called by bah. Arguments are split on whitespace before being
 passed to bat. Multiple arguments may be passed by supplying a space
 separated list that is quoted by the shell.
 
@@ -398,14 +398,14 @@ guaranteed to work with a custom \fBsudo\fR command.
 .TP
 .B \-\-sudoflags <flags>
 Passes arguments to sudo. These flags get passed to every instance where
-sudo is called by paru. Arguments are split on whitespace before being
+sudo is called by bah. Arguments are split on whitespace before being
 passed to sudo. Multiple arguments may be passed by supplying a space
 separated list that is quoted by the shell.
 
 .TP
 .B \-\-chrootflags <flags>
 Passes arguments to makechrootpkg. These flags get passed to every instance
-where makechrootpkg is called by paru. Arguments are split on whitespace before
+where makechrootpkg is called by bah. Arguments are split on whitespace before
 being passed to makechrootpkg. Multiple arguments may be passed by supplying a
 space separated list that is quoted by the shell.
 
@@ -419,7 +419,7 @@ Useful when PKGBUILDs don't declare needed dependencies.
 Note that this is only a temp fix and only applies to this one build. You should
 ideally patch the package yourself or report the problem to the maintainer.
 
-If you want to permanently add a package to the chroot use \fBparu -Ci package\fR
+If you want to permanently add a package to the chroot use \fBbah -Ci package\fR
 to install packages into the root chroot, or use \-\-rootchrootpkgs to specify
 packages that should be installed when the chroot is created.
 
@@ -528,7 +528,7 @@ compared against the hash at install time. This allows devel updates to be
 checked almost instantly and not require the original PKGBUILD to be downloaded.
 
 The slower pacaur-like devel checks can be implemented manually by piping
-a list of packages into paru (see \fBexamples\fR).
+a list of packages into bah (see \fBexamples\fR).
 
 .TP
 .B \-\-ignoredevel
@@ -541,7 +541,7 @@ Do not check for development packages updates during sysupgrade.
 
 .TP
 .B \-\-develsuffixes
-Suffixes that paru will use to decide if a package is a devel package. 
+Suffixes that bah will use to decide if a package is a devel package. 
 Used when determining if a pkgver bump is used when the --needed option is
 set.
 
@@ -578,7 +578,7 @@ Specifying all will enable this for all packages.
 
 .TP
 .B \-\-noprovides
-Do not look for matching providers when searching for AUR packages. Paru will
+Do not look for matching providers when searching for AUR packages. bah will
 never show its provider menu but pacman will still show its provider menu for
 repo packages.
 
@@ -600,8 +600,8 @@ Print new news during sysupgrade.
 
 .TP
 .B \-\-useask
-Use pacman's --ask flag to automatically confirm package conflicts. Paru lists
-conflicts ahead of time. It is possible that paru does not detect a conflict, 
+Use pacman's --ask flag to automatically confirm package conflicts. bah lists
+conflicts ahead of time. It is possible that bah does not detect a conflict, 
 causing a package to be removed without the user's confirmation. However, this
 is very unlikely.
 
@@ -622,7 +622,7 @@ Don't commit changes to pkgbuilds made during review.
 .B \-\-failfast
 Exit as soon as any AUR packages fail to build.
 
-By default Paru will continue and try to build other AUR packages.
+By default bah will continue and try to build other AUR packages.
 
 .TP
 .B \-\-nofailfast
@@ -638,13 +638,13 @@ Don't keep src/ and pkg/ directories after building packages.
 
 .TP
 .B \-\-combinedupgrade
-During sysupgrade, paru will first perform a refresh, then show
+During sysupgrade, bah will first perform a refresh, then show
 its combined menu of repo and AUR packages that will be upgraded. Then after
 reviewing the PKGBUILDs, the repo and AUR upgrade will start with no need
 for manual intervention.
 
-If paru exits for any reason after the refresh without upgrading, it will be
-the user's responsibility to either resolve the reason paru exited or run
+If bah exits for any reason after the refresh without upgrading, it will be
+the user's responsibility to either resolve the reason bah exited or run
 a sysupgrade through pacman directly.
 
 .TP
@@ -692,10 +692,10 @@ Do not loop sudo calls in the background.
 .B \-\-localrepo [= Repos...]
 Use a local repo to build and upgrade AUR packages.
 
-Paru will act on packages in the enabled repos instead of foreign packages.
+bah will act on packages in the enabled repos instead of foreign packages.
 The repo must already be declared in pacman.conf but does not have to already exist on disk.
 
-Optionally a list of repos to use can be passed. By default paru will consider all
+Optionally a list of repos to use can be passed. By default bah will consider all
 local repos, building new packages into the first listed repo and upgrading the packages
 in other enabled repos.
 
@@ -739,41 +739,41 @@ Don't sign databases with gpg.
 
 .SH EXAMPLES
 .TP
-paru \fIfoo\fR
+bah \fIfoo\fR
 Search and install from the repos and the \fBAUR\fR\ using interactive search
 and install.
 
 .TP
-paru \-Syu
+bah \-Syu
 Update package list and upgrade all currently installed repo and \fBAUR\fR
 packages.
 
 .TP
-paru \-Sua
+bah \-Sua
 Update all currently installed \fBAUR\fR packages.
 
 .TP
-paru \-S \fIfoo\fR
+bah \-S \fIfoo\fR
 Installs package \fIfoo\fR from the repos or the \fBAUR\fR.
 
 .TP
-paru \-Ss \fIfoo\fR
+bah \-Ss \fIfoo\fR
 Searches for package \fIfoo\fR on the repos or the \fBAUR\fR.
 
 .TP
-paru \-Si \fIfoo\fR
+bah \-Si \fIfoo\fR
 Gets information about package \fIfoo\fR from the repos or the \fBAUR\fR.
 
 .TP
-paru \-S \fIfoo\fR \-\-mflags "\-\-skipchecksums \-\-skippgpcheck"
+bah \-S \fIfoo\fR \-\-mflags "\-\-skipchecksums \-\-skippgpcheck"
 Installs \fIfoo\fR while skipping checksums and PGP checks.
 
 .TP
-paru \-B .
+bah \-B .
 Build PKGBUILD in current directory.
 
 .TP
-pacman -Qmq | grep -Ee '-(cvs|svn|git|hg|bzr|darcs)$' | paru -Ta - | paru -S --needed -
+pacman -Qmq | grep -Ee '-(cvs|svn|git|hg|bzr|darcs)$' | bah -Ta - | bah -S --needed -
 pacaur-like devel check.
 
 .SH ENVIRONMENT VARIABLES
@@ -785,39 +785,39 @@ Can be set to configure the build directory.
 Overridden by \-\-clonedir.
 
 .TP
-.B PARU_CONF
-Overrides where paru will look for its config file.
+.B bah_CONF
+Overrides where bah will look for its config file.
 
 .TP
-.B PARU_PAGER
-The pager paru will use for file review. Has higher priority than PAGER but lower priority
-than paru.conf.
+.B bah_PAGER
+The pager bah will use for file review. Has higher priority than PAGER but lower priority
+than bah.conf.
 
 .SH FILES
 .TP
 .B CONFIG DIRECTORY
-The config directory is \fI$XDG_CONFIG_HOME/paru/\fR. If
+The config directory is \fI$XDG_CONFIG_HOME/bah/\fR. If
 \fB$XDG_CONFIG_HOME\fR is unset, the config directory will fall back to
-\fI$HOME/.config/paru\fR.
+\fI$HOME/.config/bah\fR.
 
-\fIparu.conf\fR is used to store all of paru's config options. See
-.BR paru.conf (5)
+\fIbah.conf\fR is used to store all of bah's config options. See
+.BR bah.conf (5)
 for more about this file.
 
 .TP
 .B CACHE DIRECTORY
-The cache directory is \fI$XDG_CACHE_HOME/paru/\fR. If
+The cache directory is \fI$XDG_CACHE_HOME/bah/\fR. If
 \fB$XDG_CACHE_HOME\fR is unset, the cache directory will fall back to
-\fI$HOME/.cache/paru\fR.
+\fI$HOME/.cache/bah\fR.
 
 \fIpackages.aur\fR holds a list of of all AUR packages for shell
 completion. By default the completion files are refreshed every 7 days.
 
 .TP
 .B STATE DIRECTORY
-The state directory is \fI$XDG_STATE_HOME/paru/\fR. If
+The state directory is \fI$XDG_STATE_HOME/bah/\fR. If
 \fB$XDG_STATE_HOME\fR is unset, the state directory will fall back to
-\fI$HOME/.local/state/paru\fR.
+\fI$HOME/.local/state/bah\fR.
 
 \fIdevel.json\fR tracks VCS packages and the latest commit of each source. If
 any of these commits change the package will be upgraded during a devel update.
@@ -830,14 +830,14 @@ and built packages from those packages.
 
 .TP
 .B PACMAN.CONF
-Paru uses pacman's config file to set certain pacman options either through
-alpm.rs or paru itself. Options inherited include most libalpm options and
+bah uses pacman's config file to set certain pacman options either through
+alpm.rs or bah itself. Options inherited include most libalpm options and
 pacman options.
 
 Notably: \fBDatabases\fR, \fBColor\fR and \fB*Path/*Dir\fR options are used.
 
 .SH SEE ALSO
-.BR paru.conf (5),
+.BR bah.conf (5),
 .BR makepkg (8),
 .BR makepkg.conf (5),
 .BR PKGBUILD (5),
@@ -848,7 +848,7 @@ See the arch wiki at https://wiki.archlinux.org/index.php/Arch_User_Repository
 for more info on the \fBAUR\fR.
 
 .SH BUGS
-Please report bugs to our GitHub page \fBhttps://github.com/Morganamilo/paru\fR.
+Please report bugs to our GitHub page \fBhttps://github.com/Morganamilo/bah\fR.
 
 .SH AUTHORS
 Morgan <morganamilo@archlinux.org>
