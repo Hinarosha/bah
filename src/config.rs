@@ -431,7 +431,7 @@ pub struct Config {
     #[default(raur::SearchBy::NameDesc)]
     pub search_by: raur::SearchBy,
     pub limit: usize,
-    #[default(SortMode::TopDown)]
+    #[default(SortMode::BottomUp)]
     pub sort_mode: SortMode,
     #[default(Mode::empty())]
     pub mode: Mode,
@@ -1041,6 +1041,7 @@ then initialise it with:
         match key {
             "SkipReview" => self.skip_review = true,
             "BottomUp" => self.sort_mode = SortMode::BottomUp,
+            "TopDown" => self.sort_mode = SortMode::TopDown,
             "AurOnly" => self.mode = Mode::AUR,
             "PkgbuildsOnly" => self.mode = Mode::PKGBUILD,
             "RepoOnly" => self.mode = Mode::REPO,
