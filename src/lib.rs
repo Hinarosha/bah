@@ -20,6 +20,7 @@ mod remove;
 mod repo;
 mod search;
 mod stats;
+mod subcommands;
 mod sync;
 mod upgrade;
 mod util;
@@ -169,7 +170,9 @@ async fn run2<S: AsRef<str>>(config: &mut Config, args: &[S]) -> Result<i32> {
     if args.is_empty() {
         config.parse_args(["-Syu"])?;
     } else {
-        config.parse_args(args)?;
+        let owned: Vec<String> = args.iter().map(|s| s.as_ref().to_string()).collect();
+        let expanded = subcommands::expand_subcommands(owned);
+        config.parse_args(expanded.iter())?;
     }
 
     let aur_url = if config.ssh {
