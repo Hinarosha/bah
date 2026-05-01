@@ -1,9 +1,9 @@
 use crate::config::{Colors, Config};
 use crate::download::cache_info_with_warnings;
-use crate::exec;
-use crate::fmt::{date, opt, print_indent};
+use crate::fmt::{date, opt, print_indent, print_section_header};
 use crate::util::split_repo_aur_info;
 
+use alpm_utils::DbListExt;
 use alpm_utils::Targ;
 use ansiterm::Style;
 use anyhow::Error;
@@ -62,11 +62,20 @@ pub async fn info(conf: &mut Config, verbose: bool) -> Result<i32, Error> {
     };
 
     if !repo.is_empty() {
-        let targets = repo.into_iter().map(|t| t.to_string()).collect::<Vec<_>>();
-        let mut args = conf.pacman_args();
-        args.targets.clear();
-        args.targets(targets.iter().map(|t| t.as_str()));
-        ret |= exec::pacman(conf, &args)?.code();
+        let (repo_infos, missing_repo) = collect_repo_info(conf, &repo);
+        if !repo_infos.is_empty() {
+            print_repo_info(conf, &repo_infos, longest)?;
+        }
+        for pkg in &missing_repo {
+            eprintln!(
+                "{} {}",
+                conf.color.error.paint("error:"),
+                tr!("package '{}' was not found", pkg),
+            );
+        }
+        if !missing_repo.is_empty() {
+            ret |= 1;
+        }
     }
 
     if !aur.is_empty() {
@@ -78,6 +87,119 @@ pub async fn info(conf: &mut Config, verbose: bool) -> Result<i32, Error> {
     }
 
     Ok(ret)
+}
+
+#[derive(Debug, Clone)]
+pub struct RepoPackageInfo {
+    pub repository: String,
+    pub name: String,
+    pub version: String,
+    pub description: Option<String>,
+    pub url: Option<String>,
+    pub groups: Vec<String>,
+    pub licenses: Vec<String>,
+    pub provides: Vec<String>,
+    pub depends_on: Vec<String>,
+    pub optional_deps: Vec<String>,
+    pub conflicts_with: Vec<String>,
+    pub maintainer: Option<String>,
+    pub build_date: Option<String>,
+    pub install_date: Option<String>,
+}
+
+pub fn collect_repo_info(conf: &Config, targets: &[Targ]) -> (Vec<RepoPackageInfo>, Vec<String>) {
+    let mut infos = Vec::new();
+    let mut missing = Vec::new();
+
+    for target in targets {
+        let pkg = if let Some(repo_name) = target.repo {
+            conf.alpm
+                .syncdbs()
+                .iter()
+                .find(|db| db.name() == repo_name)
+                .and_then(|db| db.pkg(target.pkg).ok())
+        } else {
+            conf.alpm
+                .syncdbs()
+                .pkg(target.pkg)
+                .ok()
+                .or_else(|| conf.alpm.syncdbs().find_target_satisfier(target.pkg))
+        };
+
+        if let Some(pkg) = pkg {
+            infos.push(RepoPackageInfo {
+                repository: pkg
+                    .db()
+                    .map(|db| db.name().to_string())
+                    .unwrap_or_else(|| "local".to_string()),
+                name: pkg.name().to_string(),
+                version: pkg.version().as_str().to_string(),
+                description: pkg.desc().map(ToString::to_string),
+                url: pkg.url().map(ToString::to_string),
+                groups: pkg.groups().iter().map(ToString::to_string).collect(),
+                licenses: pkg.licenses().iter().map(ToString::to_string).collect(),
+                provides: pkg
+                    .provides()
+                    .iter()
+                    .map(|d| d.to_string())
+                    .collect::<Vec<String>>(),
+                depends_on: pkg
+                    .depends()
+                    .iter()
+                    .map(|d| d.to_string())
+                    .collect::<Vec<String>>(),
+                optional_deps: pkg
+                    .optdepends()
+                    .iter()
+                    .map(|d| d.to_string())
+                    .collect::<Vec<String>>(),
+                conflicts_with: pkg
+                    .conflicts()
+                    .iter()
+                    .map(|d| d.to_string())
+                    .collect::<Vec<String>>(),
+                maintainer: pkg.packager().map(ToString::to_string),
+                build_date: Some(date(pkg.build_date())),
+                install_date: pkg.install_date().map(date),
+            });
+        } else {
+            missing.push(target.pkg.to_string());
+        }
+    }
+
+    (infos, missing)
+}
+
+pub fn print_repo_info(conf: &Config, pkgs: &[RepoPackageInfo], len: usize) -> Result<(), Error> {
+    let color = conf.color;
+    let cols = get_terminal_width();
+    let print = |k: &str, v: &str| print(color, len, cols, k, v);
+    let print_list = |k: &str, v: &[String]| print_list(color, len, cols, k, v);
+
+    for pkg in pkgs {
+        print_section_header(conf, &format!("{}/{}", pkg.repository, pkg.name));
+        print(&tr!("Repository"), &pkg.repository);
+        print(&tr!("Name"), &pkg.name);
+        print(&tr!("Version"), &pkg.version);
+        print(&tr!("Description"), pkg.description.as_deref().unwrap_or(&tr!("None")));
+        print("URL", pkg.url.as_deref().unwrap_or(&tr!("None")));
+        print_list(&tr!("Groups"), &pkg.groups);
+        print_list(&tr!("Licenses"), &pkg.licenses);
+        print_list(&tr!("Provides"), &pkg.provides);
+        print_list(&tr!("Depends On"), &pkg.depends_on);
+        print_list(&tr!("Optional Deps"), &pkg.optional_deps);
+        print_list(&tr!("Conflicts With"), &pkg.conflicts_with);
+        print(&tr!("Maintainer"), pkg.maintainer.as_deref().unwrap_or(&tr!("None")));
+        if let Some(build_date) = &pkg.build_date {
+            print(&tr!("Build Date"), build_date);
+        }
+        if let Some(install_date) = &pkg.install_date {
+            print(&tr!("Install Date"), install_date);
+        }
+        println!();
+    }
+
+    Ok(())
 }
 
 fn longest(config: &Config) -> usize {

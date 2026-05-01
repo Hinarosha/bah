@@ -1,17 +1,16 @@
 use crate::config::{Config, LocalRepos};
 use crate::devel::{filter_devel_updates, possible_devel_updates};
-use crate::fmt::color_repo;
 use crate::util::{input, NumberMenu};
 use crate::{repo, RaurHandle};
 
 use std::collections::{HashMap, HashSet};
 
-use alpm::{AlpmList, Db};
 use alpm_utils::DbListExt;
 use anyhow::Result;
 use aur_depends::{Resolver, Updates};
 use futures::try_join;
 use tr::tr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[derive(Default, Debug)]
 pub struct Upgrades {
@@ -86,30 +85,59 @@ fn print_upgrade(
     n: usize,
     n_max: usize,
     pkg: &str,
-    db: &str,
-    db_pkg_max: usize,
+    pkg_max: usize,
     old: &str,
-    old_max: usize,
+    old_new_max: usize,
     new: &str,
+    summary: &str,
+    summary_max: usize,
 ) {
     let c = config.color;
     let n = format!("{:>pad$}", n, pad = n_max);
-    let db_pkg = format!(
-        "{}/{}{:pad$}",
-        color_repo(config.color.enabled, db),
-        c.bold.paint(pkg),
-        "",
-        pad = db_pkg_max - (db.len() + pkg.len()) + 1
-    );
-    let old = format!("{:<pad$}", old, pad = old_max);
-    let (old, new) = get_version_diff(config, &old, new);
+    let pkg_plain = truncate_to_width(pkg, pkg_max);
+    let pkg_pad = " ".repeat(pkg_max.saturating_sub(pkg_plain.width()));
+    let old_new_plain = format!("{old} -> {new}");
+    let old_new_plain = truncate_to_width(&old_new_plain, old_new_max);
+    let old_new_pad = " ".repeat(old_new_max.saturating_sub(old_new_plain.width()));
+    let summary_plain = truncate_to_width(summary, summary_max);
+
+    let (old_col, new_col) = get_version_diff(config, old, new);
+    let old_new_col = format!("{old_col} -> {new_col}");
+
     println!(
-        "{} {} {} -> {}",
+        "{} {}{} {}{} {}",
         c.number_menu.paint(n),
-        c.bold.paint(db_pkg),
-        old,
-        new
+        c.bold.paint(pkg_plain),
+        pkg_pad,
+        old_new_col,
+        old_new_pad,
+        c.install_version.paint(summary_plain)
     );
+}
+
+fn truncate_to_width(s: &str, max_width: usize) -> String {
+    if max_width == 0 {
+        return String::new();
+    }
+    if s.width() <= max_width {
+        return s.to_string();
+    }
+    if max_width <= 3 {
+        return ".".repeat(max_width);
+    }
+
+    let mut out = String::new();
+    let mut w = 0usize;
+    for ch in s.chars() {
+        let cw = ch.width().unwrap_or(0);
+        if w + cw > max_width.saturating_sub(3) {
+            break;
+        }
+        out.push(ch);
+        w += cw;
+    }
+    out.push_str("...");
+    out
 }
 
 async fn get_resolver_upgrades<'a, 'b>(
@@ -218,7 +246,9 @@ pub async fn get_upgrades<'a, 'b>(
     let mut devel_upgrades =
         filter_devel_updates(config, resolver.get_cache_mut(), &devel_upgrades).await?;
 
-    let repo_upgrades = if config.mode.repo() && config.combined_upgrade {
+    let repo_upgrades = if config.mode.repo()
+        && (config.combined_upgrade || config.args.has_arg("u", "sysupgrade"))
+    {
         repo_upgrades(config)?
     } else {
         Vec::new()
@@ -285,40 +315,44 @@ pub async fn get_upgrades<'a, 'b>(
     let mut index =
         repo_upgrades.len() + aur_upgrades.len() + devel_upgrades.len() + pkgbuild_upgrades.len();
 
-    let db_pkg_max = repo_upgrades
+    let pkg_max = repo_upgrades
         .iter()
-        .map(|u| u.name().len() + u.db().unwrap().name().len())
-        .chain(
-            aur_upgrades
-                .iter()
-                .map(|u| db_len(u.local.name(), "aur", aurdbs.list())),
-        )
-        .chain(
-            devel_upgrades
-                .iter()
-                .map(|u| db_len(&u.pkg, "devel", aurdbs.list())),
-        )
-        .chain(
-            pkgbuild_upgrades
-                .iter()
-                .map(|u| db_len(u.local.name(), &u.repo, aurdbs.list())),
-        )
+        .map(|u| u.name().width())
+        .chain(aur_upgrades.iter().map(|u| u.local.name().width()))
+        .chain(devel_upgrades.iter().map(|u| u.pkg.width()))
+        .chain(pkgbuild_upgrades.iter().map(|u| u.local.name().width()))
         .max()
         .unwrap_or(0);
 
-    let old_max = repo_upgrades
+    let old_new_max = repo_upgrades
         .iter()
-        .map(|p| db.pkg(p.name()).unwrap().version().as_str().len())
-        .chain(aur_upgrades.iter().map(|p| p.local.version().len()))
+        .map(|p| {
+            let old = db.pkg(p.name()).unwrap().version().as_str();
+            let new = p.version().as_str();
+            format!("{old} -> {new}").width()
+        })
+        .chain(aur_upgrades.iter().map(|p| {
+            let old = p.local.version();
+            let new = p.remote.version.as_str();
+            format!("{old} -> {new}").width()
+        }))
         .chain(
             devel_upgrades
                 .iter()
                 .filter_map(|p| db.pkg(p.pkg.as_str()).ok())
-                .map(|p| p.version().len()),
+                .map(|p| format!("{} -> latest-commit", p.version().as_str()).width()),
         )
-        .chain(pkgbuild_upgrades.iter().map(|p| p.local.version().len()))
+        .chain(pkgbuild_upgrades.iter().map(|p| {
+            let old = p.local.version();
+            let new = p.remote_srcinfo.version();
+            format!("{old} -> {new}").width()
+        }))
         .max()
         .unwrap_or(0);
+
+    let term_w = config.cols.unwrap_or(120).max(60);
+    let fixed = n_max + 1 + pkg_max + 1 + old_new_max + 1;
+    let summary_max = term_w.saturating_sub(fixed).max(8);
 
     for pkg in repo_upgrades.iter().rev().rev() {
         let local_pkg = config.alpm.localdb().pkg(pkg.name())?;
@@ -327,41 +361,34 @@ pub async fn get_upgrades<'a, 'b>(
             index,
             n_max,
             pkg.name(),
-            pkg.db().unwrap().name(),
-            db_pkg_max,
+            pkg_max,
             local_pkg.version(),
-            old_max,
+            old_new_max,
             pkg.version(),
+            pkg.desc().unwrap_or_default(),
+            summary_max,
         );
         index -= 1;
     }
 
     for pkg in aur_upgrades.iter().rev().rev() {
-        let remote = aurdbs
-            .pkg(pkg.local.name())
-            .map(|p| format!("{}-aur", p.db().unwrap().name()));
-        let remote = remote.as_deref().unwrap_or("aur");
         print_upgrade(
             config,
             index,
             n_max,
             pkg.local.name(),
-            remote,
-            db_pkg_max,
+            pkg_max,
             pkg.local.version(),
-            old_max,
+            old_new_max,
             &pkg.remote.version,
+            pkg.remote.description.as_deref().unwrap_or(""),
+            summary_max,
         );
         index -= 1;
     }
 
     for pkg in devel_upgrades.iter().rev().rev() {
         let pkg = pkg.pkg.as_str();
-        let remote = aurdbs
-            .pkg(pkg)
-            .map(|p| p.db().unwrap().name())
-            .map(|p| format!("{}-devel", p));
-        let remote = remote.as_deref().unwrap_or("devel");
         let current = aurdbs.pkg(pkg).or_else(|_| db.pkg(pkg)).unwrap();
         let ver = current.version();
         print_upgrade(
@@ -369,30 +396,41 @@ pub async fn get_upgrades<'a, 'b>(
             index,
             n_max,
             pkg,
-            remote,
-            db_pkg_max,
+            pkg_max,
             ver,
-            old_max,
+            old_new_max,
             "latest-commit",
+            current.desc().unwrap_or_default(),
+            summary_max,
         );
         index -= 1;
     }
 
     for pkg in pkgbuild_upgrades.iter().rev().rev() {
-        let remote = aurdbs
-            .pkg(pkg.local.name())
-            .map(|p| format!("{}-{}", p.db().unwrap().name(), pkg.repo));
-        let remote = remote.as_deref().unwrap_or("aur");
+        let summary = pkg
+            .remote_srcinfo
+            .pkgs
+            .iter()
+            .find(|p| p.pkgname == pkg.local.name())
+            .and_then(|p| p.pkgdesc.as_deref())
+            .or_else(|| {
+                pkg.remote_srcinfo
+                    .pkgs
+                    .first()
+                    .and_then(|p| p.pkgdesc.as_deref())
+            })
+            .unwrap_or("");
         print_upgrade(
             config,
             index,
             n_max,
             pkg.local.name(),
-            remote,
-            db_pkg_max,
+            pkg_max,
             pkg.local.version(),
-            old_max,
+            old_new_max,
             &pkg.remote_srcinfo.version(),
+            summary,
+            summary_max,
         );
         index -= 1;
     }
@@ -467,12 +505,3 @@ pub async fn get_upgrades<'a, 'b>(
     Ok(upgrades)
 }
 
-fn db_len(name: &str, repo_name: &str, aurdbs: AlpmList<&Db>) -> usize {
-    name.len()
-        + aurdbs
-            .pkg(name)
-            .ok()
-            .and_then(|pkg| pkg.db())
-            .map(|db| db.name().len() + repo_name.len() + 1)
-            .unwrap_or(repo_name.len())
-}

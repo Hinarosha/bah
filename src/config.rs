@@ -13,6 +13,7 @@ use std::fmt;
 use std::fs::{remove_file, OpenOptions};
 use std::io::{stderr, stdin, stdout, BufRead, IsTerminal};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::str::FromStr;
 
 use alpm::{
@@ -443,6 +444,7 @@ pub struct Config {
 
     pub help: bool,
     pub version: bool,
+    pub helper_transaction: bool,
 
     pub skip_review: bool,
     pub no_check: bool,
@@ -705,7 +707,9 @@ impl Config {
                     std::process::exit(0);
                 }
                 _ => {
-                    let status = exec::pacman(self, &self.args).unwrap_or(Status(1));
+                    let mut cmd = Command::new(&self.pacman_bin);
+                    cmd.args(self.args.args());
+                    let status = exec::command_status(&mut cmd).unwrap_or(Status(1));
                     std::process::exit(status.code());
                 }
             }
@@ -1211,9 +1215,82 @@ fn question(question: AnyQuestion, (no_confirm, c): &mut (bool, Colors)) {
             question.set_index(index as i32);
         }
         Question::InstallIgnorepkg(mut question) => {
+            println!(
+                "{} {}",
+                c.warning.paint("::"),
+                tr!(
+                    "package '{}' is ignored but will be installed",
+                    question.pkg().name()
+                )
+            );
             question.set_install(true);
         }
-        _ => (),
+        Question::Replace(question) => {
+            println!(
+                "{} {}",
+                c.warning.paint("::"),
+                tr!(
+                    "replacing '{}' with '{}' from '{}'",
+                    question.oldpkg().name(),
+                    question.newpkg().name(),
+                    question.newdb().name()
+                )
+            );
+            question.set_replace(true);
+        }
+        Question::Conflict(mut question) => {
+            let conflict = question.conflict();
+            println!(
+                "{} {}",
+                c.warning.paint("::"),
+                tr!(
+                    "file/package conflict between '{}' and '{}': {}",
+                    conflict.package1().name(),
+                    conflict.package2().name(),
+                    conflict.reason()
+                )
+            );
+            // In non-interactive mode, keep the safer path and avoid auto-removing packages.
+            question.set_remove(!*no_confirm);
+        }
+        Question::Corrupted(mut question) => {
+            println!(
+                "{} {}",
+                c.error.paint("::"),
+                tr!(
+                    "corrupted package '{}' ({})",
+                    question.filepath(),
+                    question.reason()
+                )
+            );
+            question.set_remove(true);
+        }
+        Question::RemovePkgs(mut question) => {
+            let names = question
+                .packages()
+                .iter()
+                .map(|p| p.name())
+                .collect::<Vec<_>>()
+                .join(", ");
+            println!(
+                "{} {}",
+                c.warning.paint("::"),
+                tr!("removing packages due to constraints: {}", names)
+            );
+            question.set_skip(false);
+        }
+        Question::ImportKey(mut question) => {
+            println!(
+                "{} {}",
+                c.action.paint("::"),
+                tr!(
+                    "importing key '{}' ({})",
+                    question.fingerprint(),
+                    question.uid()
+                )
+            );
+            question.set_import(true);
+        }
     }
 }
 

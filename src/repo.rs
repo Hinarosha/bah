@@ -1,4 +1,5 @@
 use crate::config::{Config, LocalRepos, Sign};
+use crate::backend;
 use crate::exec::{self, command_status};
 use crate::fmt::print_indent;
 use crate::printtr;
@@ -239,7 +240,7 @@ pub fn delete(config: &mut Config) -> Result<(), Error> {
             args.op("remove");
             args.targets = pkgs.collect();
             if !args.targets.is_empty() {
-                exec::pacman(config, &args)?.success()?;
+                backend::pacman(config, &args)?.success()?;
             }
         }
 

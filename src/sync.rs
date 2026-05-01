@@ -1,6 +1,7 @@
 use crate::config::Config;
+use crate::fmt::{print_dnf_like_rows, print_section_header, ListRow};
 use crate::pkgbuild::PkgbuildRepos;
-use crate::{exec, print_error};
+use crate::print_error;
 
 use std::io::{Read, Write};
 
@@ -32,10 +33,7 @@ pub async fn list(config: &Config) -> Result<i32> {
 
     if args.targets.is_empty() {
         if config.mode.repo() {
-            if let Err(e) = exec::pacman(config, &args) {
-                print_error(c.error, e);
-                ret = 1
-            }
+            list_repo_dbs(config, None);
         }
         if config.mode.pkgbuild() {
             for repo in &config.pkgbuild_repos.repos {
@@ -51,13 +49,7 @@ pub async fn list(config: &Config) -> Result<i32> {
     } else {
         for &target in &args.targets {
             if config.alpm.syncdbs().iter().any(|r| r.name() == target) && config.mode.repo() {
-                let mut args = args.clone();
-                args.targets.clear();
-                args.target(target);
-                if let Err(e) = exec::pacman(config, &args) {
-                    print_error(c.error, e);
-                    ret = 1;
-                }
+                list_repo_dbs(config, Some(target));
             } else if config.pkgbuild_repos.repo(target).is_some() && config.mode.pkgbuild() {
                 list_pkgbuilds(config, &config.pkgbuild_repos, target);
             } else if target == config.aur_namespace() && config.mode.aur() {
@@ -73,6 +65,62 @@ pub async fn list(config: &Config) -> Result<i32> {
     }
 
     Ok(ret)
+}
+
+fn list_repo_dbs(config: &Config, only_repo: Option<&str>) {
+    if !config.list {
+        for db in config.alpm.syncdbs().iter() {
+            if only_repo.is_some_and(|repo| repo != db.name()) {
+                continue;
+            }
+            if config.quiet {
+                println!("{}", db.name());
+            } else {
+                println!(
+                    "{} {}",
+                    db.name(),
+                    db.servers()
+                        .first()
+                        .unwrap_or("")
+                        .trim_start_matches("file://")
+                );
+            }
+        }
+        return;
+    }
+
+    let mut rows: Vec<ListRow> = Vec::new();
+
+    for db in config.alpm.syncdbs().iter() {
+        if only_repo.is_some_and(|repo| repo != db.name()) {
+            continue;
+        }
+        for pkg in db.pkgs().iter() {
+            if config.quiet {
+                println!("{}", pkg.name());
+            } else {
+                let status = match config.alpm.localdb().pkg(pkg.name()) {
+                    Ok(local_pkg) if local_pkg.version() != pkg.version() => {
+                        tr!("installed: {}", local_pkg.version())
+                    }
+                    Ok(_) => tr!("installed"),
+                    Err(_) => String::new(),
+                };
+                rows.push(ListRow {
+                    repository: db.name().to_string(),
+                    name: pkg.name().to_string(),
+                    version: pkg.version().as_str().to_string(),
+                    status,
+                    description: pkg.desc().unwrap_or_default().to_string(),
+                });
+            }
+        }
+    }
+
+    if !config.quiet {
+        print_section_header(config, &tr!("Available repository packages"));
+        print_dnf_like_rows(config, &rows);
+    }
 }
 
 pub fn list_pkgbuilds(config: &Config, repos: &PkgbuildRepos, repo: &str) {

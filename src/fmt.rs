@@ -1,5 +1,3 @@
-use std::fmt::Write;
-
 use std::collections::HashSet;
 
 use crate::config::Config;
@@ -11,14 +9,7 @@ use aur_depends::{Actions, Base};
 use ansiterm::Style;
 use chrono::{Local, TimeZone, Utc};
 use tr::tr;
-use unicode_width::UnicodeWidthStr;
-
-struct ToInstall {
-    install: Vec<String>,
-    make_install: Vec<String>,
-    aur: Vec<String>,
-    make_aur: Vec<String>,
-}
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 pub fn opt(opt: &Option<String>) -> String {
     opt.clone().unwrap_or_else(|| tr!("None"))
@@ -141,143 +132,272 @@ pub fn print_target(targ: &str, quiet: bool) {
     }
 }
 
-fn base_string(config: &Config, base: &Base, devel: &HashSet<String>) -> String {
-    let c = config.color;
-    let mut s = String::new();
-    write!(
-        &mut s,
-        "{}{}",
-        base.package_base(),
-        c.install_version.paint("-"),
-    )
-    .unwrap();
-    if base.packages().any(|p| devel.contains(p)) {
-        write!(&mut s, "{}", c.install_version.paint("latest-commit")).unwrap();
-    } else {
-        write!(&mut s, "{}", c.install_version.paint(base.version())).unwrap();
-    }
-
-    if !Base::base_is_pkg(base.package_base(), base.packages()) {
-        write!(&mut s, " (").unwrap();
-        let mut pkgs = base.packages();
-        write!(&mut s, "{}", pkgs.next().unwrap()).unwrap();
-        for pkg in pkgs {
-            write!(&mut s, " {}", pkg).unwrap();
-        }
-        write!(&mut s, ")").unwrap();
-    }
-    s
+#[derive(Debug, Clone)]
+pub struct ListRow {
+    pub repository: String,
+    pub name: String,
+    pub version: String,
+    pub status: String,
+    pub description: String,
 }
 
-fn to_install(config: &Config, actions: &Actions, devel: &HashSet<String>) -> ToInstall {
+pub fn truncate_to_width(s: &str, max_width: usize) -> String {
+    if max_width == 0 {
+        return String::new();
+    }
+    if s.width() <= max_width {
+        return s.to_string();
+    }
+    if max_width <= 3 {
+        return ".".repeat(max_width);
+    }
+
+    let mut out = String::new();
+    let mut w = 0usize;
+    for ch in s.chars() {
+        let cw = ch.width().unwrap_or(0);
+        if w + cw > max_width.saturating_sub(3) {
+            break;
+        }
+        out.push(ch);
+        w += cw;
+    }
+    out.push_str("...");
+    out
+}
+
+pub fn print_section_header(config: &Config, title: &str) {
     let c = config.color;
-    let dash = c.install_version.paint("-");
+    println!("{} {}", c.action.paint("::"), c.bold.paint(title));
+}
 
-    let install = actions
-        .install
-        .iter()
-        .filter(|p| !p.make)
-        .map(|p| {
-            format!(
-                "{}{}{}",
-                p.pkg.name(),
-                dash,
-                c.install_version.paint(p.pkg.version().to_string())
-            )
-        })
-        .collect::<Vec<_>>();
-    let make_install = actions
-        .install
-        .iter()
-        .filter(|p| p.make)
-        .map(|p| {
-            format!(
-                "{}{}{}",
-                p.pkg.name(),
-                dash,
-                c.install_version.paint(p.pkg.version().to_string())
-            )
-        })
-        .collect::<Vec<_>>();
-
-    let mut build = actions.build.clone();
-    for base in &mut build {
-        match base {
-            Base::Aur(base) => base.pkgs.retain(|p| !p.make),
-            Base::Pkgbuild(base) => base.pkgs.retain(|p| !p.make),
-        }
+pub fn print_dnf_like_rows(config: &Config, rows: &[ListRow]) {
+    if rows.is_empty() {
+        return;
     }
-    build.retain(|b| b.package_count() != 0);
-    let build = build
-        .iter()
-        .map(|p| base_string(config, p, devel))
-        .collect::<Vec<_>>();
 
-    let mut make_build = actions.build.clone();
-    for base in &mut make_build {
-        match base {
-            Base::Aur(base) => base.pkgs.retain(|p| p.make),
-            Base::Pkgbuild(base) => base.pkgs.retain(|p| p.make),
-        }
-    }
-    make_build.retain(|b| b.package_count() != 0);
-    let make_build = make_build
+    let term_w = config.cols.unwrap_or(120).max(80);
+    let col_gap = 2usize;
+    let name_w = rows.iter().map(|r| r.name.width()).max().unwrap_or(4).min(38);
+    let ver_w = rows
         .iter()
-        .map(|p| base_string(config, p, devel))
-        .collect::<Vec<_>>();
+        .map(|r| format!("{} {}", r.repository, r.version).width())
+        .max()
+        .unwrap_or(7)
+        .min(34);
+    let status_w = rows.iter().map(|r| r.status.width()).max().unwrap_or(6).min(18);
+    let fixed = name_w + ver_w + status_w + (col_gap * 3);
+    let desc_w = term_w.saturating_sub(fixed).max(12);
 
-    ToInstall {
-        install,
-        make_install,
-        aur: build,
-        make_aur: make_build,
+    let c = config.color;
+    let headers = (
+        truncate_to_width(&tr!("Name"), name_w),
+        truncate_to_width(&tr!("Repo Version"), ver_w),
+        truncate_to_width(&tr!("Status"), status_w),
+        truncate_to_width(&tr!("Description"), desc_w),
+    );
+    println!(
+        "{}{:name_pad$}  {}{:ver_pad$}  {}{:status_pad$}  {}",
+        c.field.paint(&headers.0),
+        "",
+        c.field.paint(&headers.1),
+        "",
+        c.field.paint(&headers.2),
+        "",
+        c.field.paint(&headers.3),
+        name_pad = name_w.saturating_sub(headers.0.width()),
+        ver_pad = ver_w.saturating_sub(headers.1.width()),
+        status_pad = status_w.saturating_sub(headers.2.width()),
+    );
+
+    for row in rows {
+        let name = truncate_to_width(&row.name, name_w);
+        let rv = truncate_to_width(&format!("{} {}", row.repository, row.version), ver_w);
+        let status = truncate_to_width(&row.status, status_w);
+        let desc = truncate_to_width(&row.description, desc_w);
+
+        println!(
+            "{}{:name_pad$}  {}{:ver_pad$}  {}{:status_pad$}  {}",
+            c.sl_pkg.paint(name),
+            "",
+            c.sl_repo.paint(rv),
+            "",
+            c.sl_installed.paint(status),
+            "",
+            c.install_version.paint(desc),
+            name_pad = name_w.saturating_sub(row.name.width().min(name_w)),
+            ver_pad = ver_w.saturating_sub(format!("{} {}", row.repository, row.version).width().min(ver_w)),
+            status_pad = status_w.saturating_sub(row.status.width().min(status_w)),
+        );
     }
 }
 
 pub fn print_install(config: &Config, actions: &Actions, devel: &HashSet<String>) {
     let c = config.color;
+    let db = config.alpm.localdb();
+
+    struct UpgradeRow {
+        name: String,
+        old: String,
+        new: String,
+        summary: String,
+    }
+
+    fn truncate_to_width(s: &str, max_width: usize) -> String {
+        if max_width == 0 {
+            return String::new();
+        }
+        if s.width() <= max_width {
+            return s.to_string();
+        }
+        if max_width <= 3 {
+            return ".".repeat(max_width);
+        }
+
+        let mut out = String::new();
+        let mut w = 0usize;
+        for ch in s.chars() {
+            let cw = ch.width().unwrap_or(0);
+            if w + cw > max_width.saturating_sub(3) {
+                break;
+            }
+            out.push(ch);
+            w += cw;
+        }
+        out.push_str("...");
+        out
+    }
+
+    fn color_version_diff(config: &Config, old: &str, new: &str) -> String {
+        let mut old_iter = old.chars();
+        let mut new_iter = new.chars();
+        let mut old_split = old_iter.clone();
+
+        while let Some(old_c) = old_iter.next() {
+            let new_c = match new_iter.next() {
+                Some(c) => c,
+                None => break,
+            };
+
+            if old_c != new_c {
+                break;
+            }
+
+            if !old_c.is_alphanumeric() {
+                old_split = old_iter.clone();
+            }
+        }
+
+        let common = old.len().saturating_sub(old_split.as_str().len());
+        let old_colored = format!(
+            "{}{}",
+            &old[..common],
+            config.color.old_version.paint(&old[common..])
+        );
+        let new_colored = format!(
+            "{}{}",
+            &new[..common],
+            config.color.new_version.paint(&new[common..])
+        );
+        format!("{old_colored} -> {new_colored}")
+    }
 
     println!();
+    let mut rows: Vec<UpgradeRow> = Vec::new();
 
-    let to = to_install(config, actions, devel);
+    let mut install = actions.install.clone();
+    install.sort_by(|a, b| {
+        a.pkg.name()
+            .cmp(b.pkg.name())
+            .then(a.pkg.db().unwrap().name().cmp(b.pkg.db().unwrap().name()))
+    });
 
-    if !to.install.is_empty() {
-        let fmt = format!("{} ({}) ", tr!("Repo"), to.install.len());
-        let start = 17 + to.install.len().to_string().len();
-        print!("{}", c.bold.paint(fmt));
-        print_indent(Style::new(), start, 8, config.cols, "  ", to.install);
+    for pkg in &install {
+        let name = pkg.pkg.name().to_string();
+        let old = db
+            .pkg(pkg.pkg.name())
+            .map(|p| p.version().as_str().to_string())
+            .unwrap_or_default();
+        let new = pkg.pkg.version().as_str().to_string();
+        let summary = pkg.pkg.desc().unwrap_or_default().to_string();
+        rows.push(UpgradeRow {
+            name,
+            old,
+            new,
+            summary,
+        });
     }
 
-    if !to.make_install.is_empty() {
-        let fmt = format!("{} ({}) ", tr!("Repo Make"), to.make_install.len());
-        let start = 22 + to.make_install.len().to_string().len();
-        print!("{}", c.bold.paint(fmt));
-        print_indent(Style::new(), start, 8, config.cols, "  ", to.make_install);
+    for base in &actions.build {
+        match base {
+            Base::Aur(base) => {
+                for pkg in &base.pkgs {
+                    let new = if devel.contains(&pkg.pkg.name) {
+                        "latest-commit".to_string()
+                    } else {
+                        pkg.pkg.version.clone()
+                    };
+                    rows.push(UpgradeRow {
+                        name: pkg.pkg.name.clone(),
+                        old: old_ver(config, &pkg.pkg.name)
+                            .map(|v| v.as_str().to_string())
+                            .unwrap_or_default(),
+                        new,
+                        summary: pkg.pkg.description.clone().unwrap_or_default(),
+                    });
+                }
+            }
+            Base::Pkgbuild(base) => {
+                for pkg in &base.pkgs {
+                    let new = if devel.contains(&pkg.pkg.pkgname) {
+                        "latest-commit".to_string()
+                    } else {
+                        base.srcinfo.version().to_string()
+                    };
+                    rows.push(UpgradeRow {
+                        name: pkg.pkg.pkgname.clone(),
+                        old: old_ver(config, &pkg.pkg.pkgname)
+                            .map(|v| v.as_str().to_string())
+                            .unwrap_or_default(),
+                        new,
+                        summary: pkg.pkg.pkgdesc.clone().unwrap_or_default(),
+                    });
+                }
+            }
+        }
     }
 
-    if !to.aur.is_empty() {
-        let aur = if actions.iter_pkgbuilds().next().is_some() {
-            "Pkgbuilds"
-        } else {
-            "Aur"
-        };
-        let fmt = format!("{} ({}) ", aur, to.aur.len());
-        let start = 16 + to.aur.len().to_string().len();
-        print!("{}", c.bold.paint(fmt));
-        print_indent(Style::new(), start, 8, config.cols, "  ", to.aur);
-    }
+    let name_w = rows
+        .iter()
+        .map(|r| r.name.width())
+        .max()
+        .unwrap_or_default()
+        .max(1);
+    let ver_w = rows
+        .iter()
+        .map(|r| format!("{} -> {}", r.old, r.new).width())
+        .max()
+        .unwrap_or_default()
+        .max(1);
+    let term_w = config.cols.unwrap_or(120).max(60);
+    let desc_w = term_w.saturating_sub(name_w + 1 + ver_w + 1).max(8);
 
-    if !to.make_aur.is_empty() {
-        let aur = if actions.iter_pkgbuilds().next().is_some() {
-            tr!("Pkgbuilds Make")
-        } else {
-            tr!("Aur Make")
-        };
+    for row in rows {
+        let name = truncate_to_width(&row.name, name_w);
+        let name_pad = " ".repeat(name_w.saturating_sub(name.width()));
+        let ver_plain = truncate_to_width(&format!("{} -> {}", row.old, row.new), ver_w);
+        let ver_pad = " ".repeat(ver_w.saturating_sub(ver_plain.width()));
+        let summary = truncate_to_width(&row.summary, desc_w);
+        let ver_colored = color_version_diff(config, &row.old, &row.new);
 
-        let fmt = format!("{} ({}) ", aur, to.make_aur.len());
-        let start = 16 + to.make_aur.len().to_string().len();
-        print!("{}", c.bold.paint(fmt));
-        print_indent(Style::new(), start, 8, config.cols, "  ", to.make_aur);
+        println!(
+            "{}{} {}{} {}",
+            c.bold.paint(name),
+            name_pad,
+            ver_colored,
+            ver_pad,
+            c.install_version.paint(summary)
+        );
     }
 
     println!();

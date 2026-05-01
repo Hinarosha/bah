@@ -171,6 +171,7 @@ impl Config {
         match arg {
             Arg::Long("help") | Arg::Short('h') => self.help = true,
             Arg::Long("version") | Arg::Short('V') => self.version = true,
+            Arg::Long("helper-transaction") => self.helper_transaction = true,
             Arg::Long("aururl") => self.aur_url = Url::parse(value?)?,
             Arg::Long("aurrpcurl") => self.aur_rpc_url = Some(Url::parse(value?)?),
             Arg::Long("makepkg") => self.makepkg_bin = value?.to_string(),

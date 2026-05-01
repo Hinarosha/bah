@@ -1,9 +1,10 @@
 use crate::devel::{load_devel_info, save_devel_info};
+use crate::backend;
 use crate::print_error;
 use crate::search::interactive_search_local;
 use crate::util::pkg_base_or_name;
 use crate::Config;
-use crate::{exec, repo};
+use crate::repo;
 
 use std::collections::HashMap;
 
@@ -36,7 +37,7 @@ pub fn remove(config: &mut Config) -> Result<i32> {
         }
     }
 
-    let mut ret = exec::pacman(config, &config.args)?.code();
+    let mut ret = backend::pacman(config, &config.args)?.code();
     if ret != 0 {
         return Ok(ret);
     }

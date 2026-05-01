@@ -1,4 +1,5 @@
 mod args;
+mod backend;
 mod chroot;
 mod clean;
 mod command_line;
@@ -22,6 +23,7 @@ mod search;
 mod stats;
 mod subcommands;
 mod sync;
+mod tx_helper;
 mod upgrade;
 mod util;
 
@@ -205,12 +207,16 @@ async fn run2<S: AsRef<str>>(config: &mut Config, args: &[S]) -> Result<i32> {
 }
 
 async fn handle_cmd(config: &mut Config) -> Result<i32> {
+    if config.helper_transaction {
+        return tx_helper::run_helper_transaction(config);
+    }
+
     if (config.op == Op::ChrootCtl || config.chroot) && !has_command("arch-nspawn") {
         bail!(tr!("can not use chroot builds: devtools is not installed"));
     }
 
     let ret = match config.op {
-        Op::Database | Op::Files => exec::pacman(config, &config.args)?.code(),
+        Op::Database | Op::Files => backend::pacman(config, &config.args)?.code(),
         Op::Upgrade => handle_upgrade(config).await?,
         Op::Build => handle_build(config).await?,
         Op::Query => handle_query(config).await?,
@@ -234,7 +240,7 @@ async fn handle_upgrade(config: &mut Config) -> Result<i32> {
         install::build_dirs(config, vec![dir]).await?;
         Ok(0)
     } else {
-        Ok(exec::pacman(config, &config.args)?.code())
+        Ok(backend::pacman(config, &config.args)?.code())
     }
 }
 
@@ -261,7 +267,7 @@ async fn handle_query(config: &mut Config) -> Result<i32> {
     } else if args.has_arg("u", "upgrades") {
         print_upgrade_list(config).await
     } else {
-        Ok(exec::pacman(config, args)?.code())
+        Ok(backend::pacman(config, args)?.code())
     }
 }
 
@@ -302,7 +308,7 @@ async fn handle_default(config: &mut Config) -> Result<i32> {
             args.remove("o");
             args.targets = unneeded;
             args.op = "remove";
-            Ok(exec::pacman(config, &args)?.code())
+            Ok(backend::pacman(config, &args)?.code())
         } else {
             printtr!(" there is nothing to do");
             Ok(0)
@@ -325,7 +331,7 @@ async fn handle_test(config: &Config) -> Result<i32> {
     if config.aur_filter {
         sync::filter(config).await
     } else {
-        Ok(exec::pacman(config, &config.args)?.code())
+        Ok(backend::pacman(config, &config.args)?.code())
     }
 }
 
@@ -358,7 +364,7 @@ async fn handle_sync(config: &mut Config) -> Result<i32> {
         || config.args.has_arg("p", "print")
         || config.args.has_arg("p", "print-format")
     {
-        Ok(exec::pacman(config, &config.args)?.code())
+        Ok(backend::pacman(config, &config.args)?.code())
     } else {
         if config.interactive {
             search::interactive_search(config, true).await?;

@@ -10,6 +10,7 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::Ordering;
 
 use crate::args::{Arg, Args};
+use crate::backend;
 use crate::chroot::Chroot;
 use crate::clean::clean_untracked;
 use crate::completion::update_aur_cache;
@@ -21,11 +22,12 @@ use crate::fmt::{print_indent, print_install, print_install_verbose};
 use crate::keys::check_pgp_keys;
 use crate::pkgbuild::PkgbuildRepo;
 use crate::resolver::{flags, resolver};
+use crate::tx_helper::{run_plan_with_helper, TransactionPlan};
 use crate::upgrade::{get_upgrades, Upgrades};
 use crate::util::{ask, repo_aur_pkgs, split_repo_aur_targets};
 use crate::{args, exec, news, print_error, printtr, repo};
 
-use alpm::{Alpm, Depend, Version};
+use alpm::{Alpm, Depend, PackageReason, Version};
 use alpm_utils::depends::{satisfies, satisfies_nover, satisfies_provide, satisfies_provide_nover};
 use alpm_utils::{DbListExt, Targ};
 use ansiterm::Style;
@@ -130,7 +132,7 @@ impl Installer {
             args.arg("y");
         }
         args.targets.clear();
-        exec::pacman(config, &args)?.success()?;
+        backend::pacman(config, &args)?.success()?;
         config.args.remove("y").remove("refresh");
         Ok(())
     }
@@ -139,7 +141,7 @@ impl Installer {
         let mut args = config.pacman_args();
         args.targets.clear();
         args.targets(targets.iter().map(|i| i.as_str()));
-        exec::pacman(config, &args)?.success()?;
+        backend::pacman(config, &args)?.success()?;
         config.args.remove("y").remove("refresh");
         config.args.remove("u").remove("sysupgrade");
         Ok(())
@@ -299,7 +301,7 @@ impl Installer {
                 || args.has_arg("u", "sysupgrade")
                 || args.has_arg("y", "refresh")
             {
-                exec::pacman(config, &args)?.success()?;
+                backend::pacman(config, &args)?.success()?;
             }
         }
 
@@ -392,7 +394,7 @@ impl Installer {
 
             debug!("flushing install queue");
             args.targets = self.install_queue.iter().map(|s| s.as_str()).collect();
-            exec::pacman(config, &args)?.success()?;
+            backend::pacman(config, &args)?.success()?;
 
             if config.devel {
                 save_devel_info(config, &self.devel_info)?;
@@ -415,7 +417,7 @@ impl Installer {
             args.op("remove").arg("noconfirm");
             args.targets = self.remove_make.iter().map(|s| s.as_str()).collect();
 
-            if let Err(err) = exec::pacman(config, &args) {
+            if let Err(err) = backend::pacman(config, &args) {
                 print_error(config.color.error, err);
                 ret = 1;
             }
@@ -912,11 +914,19 @@ impl Installer {
         }
 
         if config.mode.repo() {
+            if config.args.has_arg("y", "refresh")
+                && config.args.has_arg("u", "sysupgrade")
+                && !config.combined_upgrade
+            {
+                // Keep remote DBs fresh before upgrade resolution/menu rendering.
+                self.early_refresh(config)?;
+            }
             if config.combined_upgrade {
                 if config.args.has_arg("y", "refresh") {
                     self.early_refresh(config)?;
                 }
             } else if !config.chroot
+                && !config.args.has_arg("u", "sysupgrade")
                 && (config.args.has_arg("y", "refresh")
                     || config.args.has_arg("u", "sysupgrade")
                     || !repo_targets.is_empty()
@@ -995,7 +1005,7 @@ impl Installer {
                 || args.has_arg("u", "sysupgrade")
                 || args.has_arg("y", "refresh")
             {
-                let code = exec::pacman(config, &args)?.code();
+                let code = backend::pacman(config, &args)?.code();
                 return Status::err(code);
             }
 
@@ -1526,7 +1536,7 @@ fn repo_install(
         }
     }
 
-    exec::pacman(config, &args)?.success()?;
+    backend::pacman(config, &args)?.success()?;
     asdeps(config, &deps)?;
     asexp(config, &exp)?;
 
@@ -1542,26 +1552,30 @@ fn asexp<S: AsRef<str>>(config: &Config, pkgs: &[S]) -> Result<()> {
 }
 
 fn set_install_reason<S: AsRef<str>>(config: &Config, reason: &str, pkgs: &[S]) -> Result<()> {
-    let alpm = config.new_alpm()?;
-    let db = alpm.localdb();
-
-    let pkgs = pkgs
-        .iter()
-        .map(|s| s.as_ref())
-        .filter(|p| db.pkg(*p).is_ok());
-
-    let mut args = config.pacman_globals();
-    args.op("database").arg(reason).targets(pkgs);
-    if args.targets.is_empty() {
+    if !nix::unistd::Uid::effective().is_root() {
+        let plan = TransactionPlan::SetInstallReason {
+            reason: reason.to_string(),
+            packages: pkgs.iter().map(|s| s.as_ref().to_string()).collect(),
+            no_confirm: config.no_confirm,
+        };
+        run_plan_with_helper(config, &plan)?.success()?;
         return Ok(());
     }
 
-    let output = exec::pacman_output(config, &args)?;
-    ensure!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let alpm = config.new_alpm()?;
+    let pkg_reason = match reason {
+        "asdeps" => PackageReason::Depend,
+        "asexplicit" => PackageReason::Explicit,
+        _ => bail!(tr!("unsupported install reason '{}'", reason)),
+    };
+
+    let db = alpm.localdb();
+    for pkg_name in pkgs.iter().map(|s| s.as_ref()) {
+        if let Ok(pkg) = db.pkg(pkg_name) {
+            pkg.set_reason(pkg_reason)?;
+        }
+    }
+
     Ok(())
 }
 
