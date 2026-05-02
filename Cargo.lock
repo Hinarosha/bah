@@ -208,6 +208,7 @@ name = "bah"
 version = "2.1.0"
 dependencies = [
  "alpm",
+ "alpm-sys",
  "alpm-utils",
  "ansiterm",
  "anyhow",

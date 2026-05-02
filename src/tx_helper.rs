@@ -2,20 +2,34 @@ use crate::config::{Colors, Config};
 use crate::exec::Status;
 use crate::util::ask;
 
-use alpm::{AnyEvent, AnyQuestion, Error as AlpmError, Event, Progress, SigLevel, TransFlag};
+use alpm::{
+    AnyEvent, AnyQuestion, CommitError, Error as AlpmError, Event, HookWhen, LogLevel, Progress,
+    SigLevel, TransFlag,
+};
 use alpm_utils::DbListExt;
+use alpm_sys::alpm_handle_t;
 use anyhow::{anyhow, bail, Context, Result};
-use nix::unistd::Uid;
+use nix::unistd::{dup, dup2_stdout, Uid};
 use serde::{Deserialize, Serialize};
-use std::fs::{read_to_string, remove_file};
+use signal_hook::consts::signal::{SIGINT, SIGTERM};
+use signal_hook::iterator::Signals;
+use std::fs::{read_to_string, remove_file, File};
 use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
+use std::sync::Mutex;
 
 const MAX_PLAN_BYTES: usize = 128 * 1024;
 const MAX_TARGETS: usize = 4096;
 const MAX_TARGET_LEN: usize = 4096;
 const MAX_IPC_LINE_BYTES: usize = 16 * 1024;
+const MAX_LOG_MESSAGE_BYTES: usize = 8192;
+
+static HELPER_JSON_OUT: Mutex<Option<File>> = Mutex::new(None);
+
+static ACTIVE_COMMIT_HANDLE: AtomicPtr<alpm_handle_t> = AtomicPtr::new(std::ptr::null_mut());
+static SIG_THREAD_STARTED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -73,6 +87,10 @@ pub enum HelperToParent {
     Progress {
         message: String,
     },
+    LogLine {
+        level: String,
+        message: String,
+    },
     Question {
         id: u64,
         prompt: String,
@@ -98,6 +116,19 @@ struct QuestionIpcState {
     next_id: u64,
 }
 
+/// Makes JSON IPC lines go to the duplicated pipe fd; hooks and children inherit fd 1 as a copy of stderr (terminal), not the pipe.
+fn install_ipc_json_sink() -> Result<()> {
+    use std::io::{stderr, stdout};
+    let ipc_fd = dup(stdout()).context("dup helper stdout for JSON IPC")?;
+    dup2_stdout(stderr()).context("dup2 stderr onto stdout so hook children do not corrupt JSON")?;
+    let file = File::from(ipc_fd);
+    let mut guard = HELPER_JSON_OUT
+        .lock()
+        .map_err(|_| anyhow!("helper JSON sink mutex poisoned"))?;
+    *guard = Some(file);
+    Ok(())
+}
+
 pub fn run_helper_transaction(config: &Config) -> Result<i32> {
     if !Uid::effective().is_root() {
         bail!("--helper-transaction must be run as root");
@@ -118,6 +149,8 @@ pub fn run_helper_transaction(config: &Config) -> Result<i32> {
     let plan: TransactionPlan = serde_json::from_slice(&buf)
         .context("failed to parse helper transaction plan JSON")?;
     validate_plan(&plan)?;
+
+    install_ipc_json_sink().context("failed to set up helper JSON IPC channel")?;
 
     match execute_plan_root(config, &plan) {
         Ok(code) => {
@@ -200,6 +233,9 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
         match msg {
             HelperToParent::Event { message } => println!("{}", message),
             HelperToParent::Progress { message } => println!("{}", message),
+            HelperToParent::LogLine { level, message } => {
+                print_log_line_for_parent(config, &level, &message);
+            }
             HelperToParent::Question {
                 id,
                 prompt,
@@ -227,8 +263,185 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
     Ok(Status(code))
 }
 
+fn print_log_line_for_parent(config: &Config, level: &str, message: &str) {
+    let c = &config.color;
+    let prefix = match level {
+        "error" => c.error.paint("[alpm]"),
+        "warning" => c.warning.paint("[alpm]"),
+        _ => c.field.paint("[alpm]"),
+    };
+    println!("{} {}", prefix, message);
+}
+
+fn ensure_sig_interrupt_thread_started() {
+    if SIG_THREAD_STARTED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    let _ = std::thread::Builder::new()
+        .name("bah-helper-sig".to_string())
+        .spawn(|| {
+            let Ok(mut signals) = Signals::new([SIGINT, SIGTERM]) else {
+                return;
+            };
+            for _sig in signals.forever() {
+                let p = ACTIVE_COMMIT_HANDLE.load(Ordering::Acquire);
+                if !p.is_null() {
+                    unsafe {
+                        let _ = alpm_sys::alpm_trans_interrupt(p);
+                    };
+                }
+            }
+        });
+}
+
+struct ActiveCommitGuard;
+
+impl ActiveCommitGuard {
+    fn arm(alpm: &alpm::Alpm) -> Self {
+        ACTIVE_COMMIT_HANDLE.store(alpm.as_alpm_handle_t(), Ordering::Release);
+        Self
+    }
+}
+
+impl Drop for ActiveCommitGuard {
+    fn drop(&mut self) {
+        ACTIVE_COMMIT_HANDLE.store(std::ptr::null_mut(), Ordering::Release);
+    }
+}
+
+fn map_commit_error(e: CommitError, ctx: &str) -> anyhow::Error {
+    let code = e.error();
+    let mut s = format!("{}: {}", ctx, e);
+    if code == AlpmError::TransHookFailed {
+        s.push_str(
+            " (transaction hook failed; see LogLine / ALPM log messages streamed above)",
+        );
+    } else if code == AlpmError::TransAbort {
+        s.push_str(" (transaction aborted, often due to Ctrl+C)");
+    }
+    anyhow!(s)
+}
+
+fn sanitize_log_fragment(msg: &str) -> String {
+    let mut out = String::with_capacity(msg.len().min(MAX_LOG_MESSAGE_BYTES));
+    for ch in msg.chars() {
+        if out.len() >= MAX_LOG_MESSAGE_BYTES {
+            out.push_str("...");
+            break;
+        }
+        if ch == '\0' {
+            continue;
+        }
+        if ch.is_control() && ch != '\n' && ch != '\r' && ch != '\t' {
+            out.push(' ');
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn log_level_to_tag(level: LogLevel) -> &'static str {
+    if level.intersects(LogLevel::ERROR) {
+        "error"
+    } else if level.intersects(LogLevel::WARNING) {
+        "warning"
+    } else if level.intersects(LogLevel::DEBUG | LogLevel::FUNCTION) {
+        "debug"
+    } else {
+        "message"
+    }
+}
+
+fn helper_log_cb(level: LogLevel, msg: &str, _: &mut ()) {
+    let line = sanitize_log_fragment(msg);
+    if line.is_empty() {
+        return;
+    }
+    let _ = emit(&HelperToParent::LogLine {
+        level: log_level_to_tag(level).to_string(),
+        message: line,
+    });
+}
+
+/// Returns true if this package name usually requires a writable `/boot` for hooks (kernel, initramfs, bootloaders).
+fn pkg_requires_writable_boot(name: &str) -> bool {
+    const LINUX_NO_BOOT: &[&str] = &[
+        "linux-api-headers",
+        "linux-docs",
+        "linux-firmware",
+        "linux-tools",
+    ];
+    if LINUX_NO_BOOT.contains(&name) {
+        return false;
+    }
+    // Kernel / image packages
+    if name == "linux" || name.starts_with("linux-") {
+        return true;
+    }
+    if name == "mkinitcpio" || name.starts_with("mkinitcpio-") {
+        return true;
+    }
+    if name.starts_with("grub") {
+        return true;
+    }
+    if name.starts_with("refind") || name.starts_with("limine") {
+        return true;
+    }
+    if name == "syslinux" || name.starts_with("syslinux") {
+        return true;
+    }
+    if name == "sbctl" || name == "efibootmgr" {
+        return true;
+    }
+    false
+}
+
+fn transaction_touches_boot_sensitive_pkg(alpm: &alpm::Alpm) -> bool {
+    alpm.trans_add().iter().any(|p| pkg_requires_writable_boot(p.name()))
+        || alpm
+            .trans_remove()
+            .iter()
+            .any(|p| pkg_requires_writable_boot(p.name()))
+}
+
+#[cfg(target_os = "linux")]
+fn ensure_boot_rw_for_transaction(alpm: &alpm::Alpm) -> Result<()> {
+    if !transaction_touches_boot_sensitive_pkg(alpm) {
+        return Ok(());
+    }
+    let boot: PathBuf = Path::new(alpm.root()).join("boot");
+    if !boot.exists() {
+        bail!(
+            "{} does not exist. Mount your EFI/boot partition before updating kernel, initramfs, or bootloader.",
+            boot.display()
+        );
+    }
+
+    let st = nix::sys::statfs::statfs(boot.as_path())
+        .with_context(|| format!("statfs on {} failed (is /boot mounted?)", boot.display()))?;
+
+    use nix::sys::statvfs::FsFlags;
+    if st.flags().contains(FsFlags::ST_RDONLY) {
+        bail!(
+            "{} is read-only. Mount it read-write (check fstab) before updating kernel, initramfs, or bootloader so hooks can refresh images and bootloaders.",
+            boot.display()
+        );
+    }
+
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn ensure_boot_rw_for_transaction(_alpm: &alpm::Alpm) -> Result<()> {
+    Ok(())
+}
+
 fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
     let mut alpm = config.new_alpm()?;
+    // Route ALPM textual log (hooks, scriptlets detail) through JSON LogLine instead of stderr only.
+    alpm.set_log_cb((), helper_log_cb);
     alpm.set_event_cb(config.color, helper_event_cb);
     alpm.set_progress_cb(config.color, helper_progress_cb);
 
@@ -258,7 +471,7 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                     pkg.set_reason(pkg_reason)?;
                 }
             }
-            return Ok(0);
+            Ok(0)
         }
         TransactionPlan::Sync {
             targets,
@@ -321,11 +534,32 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
             for target in targets {
                 add_target(&mut alpm, target)?;
             }
-            alpm.trans_prepare()
-                .map_err(|e| anyhow!("failed to prepare ALPM transaction: {}", e.error()))?;
+            let sync_prep_err = match alpm.trans_prepare() {
+                Ok(()) => None,
+                Err(e) => Some(e.error()),
+            };
+            if let Some(code) = sync_prep_err {
+                let _ = alpm.trans_release();
+                return Err(anyhow!("failed to prepare ALPM transaction: {}", code));
+            }
+
             if !*print_only {
-                alpm.trans_commit()
-                    .map_err(|e| anyhow!("failed to commit ALPM transaction: {}", e))?;
+                ensure_sig_interrupt_thread_started();
+                if let Err(e) = ensure_boot_rw_for_transaction(&alpm) {
+                    let _ = alpm.trans_release();
+                    return Err(e);
+                }
+                let _guard = ActiveCommitGuard::arm(&alpm);
+                let commit_err = match alpm.trans_commit() {
+                    Ok(()) => None,
+                    Err(e) => Some(e),
+                };
+                drop(_guard);
+                if let Some(e) = commit_err {
+                    let _ = alpm.trans_release();
+                    let _ = alpm.unlock();
+                    return Err(map_commit_error(e, "failed to commit ALPM sync transaction").into());
+                }
             }
             let _ = alpm.trans_release();
             Ok(0)
@@ -380,11 +614,37 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                 let pkg = alpm.localdb().pkg(target.as_str())?;
                 alpm.trans_remove_pkg(pkg)?;
             }
-            alpm.trans_prepare()
-                .map_err(|e| anyhow!("failed to prepare ALPM remove transaction: {}", e.error()))?;
+            let remove_prep_err = match alpm.trans_prepare() {
+                Ok(()) => None,
+                Err(e) => Some(e.error()),
+            };
+            if let Some(code) = remove_prep_err {
+                let _ = alpm.trans_release();
+                return Err(anyhow!(
+                    "failed to prepare ALPM remove transaction: {}",
+                    code
+                ));
+            }
+
             if !*print_only {
-                alpm.trans_commit()
-                    .map_err(|e| anyhow!("failed to commit ALPM remove transaction: {}", e))?;
+                ensure_sig_interrupt_thread_started();
+                if let Err(e) = ensure_boot_rw_for_transaction(&alpm) {
+                    let _ = alpm.trans_release();
+                    return Err(e);
+                }
+                let _guard = ActiveCommitGuard::arm(&alpm);
+                let commit_err = match alpm.trans_commit() {
+                    Ok(()) => None,
+                    Err(e) => Some(e),
+                };
+                drop(_guard);
+                if let Some(e) = commit_err {
+                    let _ = alpm.trans_release();
+                    let _ = alpm.unlock();
+                    return Err(
+                        map_commit_error(e, "failed to commit ALPM remove transaction").into(),
+                    );
+                }
             }
             let _ = alpm.trans_release();
             Ok(0)
@@ -432,11 +692,39 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                 alpm.trans_add_pkg(loaded)
                     .map_err(|e| anyhow!("failed to add package file '{}': {}", target, e.error))?;
             }
-            alpm.trans_prepare()
-                .map_err(|e| anyhow!("failed to prepare ALPM upgrade transaction: {}", e.error()))?;
+            let upgrade_prep_err = match alpm.trans_prepare() {
+                Ok(()) => None,
+                Err(e) => Some(e.error()),
+            };
+            if let Some(code) = upgrade_prep_err {
+                let _ = alpm.trans_release();
+                return Err(anyhow!(
+                    "failed to prepare ALPM upgrade transaction: {}",
+                    code
+                ));
+            }
+
             if !*print_only {
-                alpm.trans_commit()
-                    .map_err(|e| anyhow!("failed to commit ALPM upgrade transaction: {}", e))?;
+                ensure_sig_interrupt_thread_started();
+                if let Err(e) = ensure_boot_rw_for_transaction(&alpm) {
+                    let _ = alpm.trans_release();
+                    return Err(e);
+                }
+                let _guard = ActiveCommitGuard::arm(&alpm);
+                let commit_err = match alpm.trans_commit() {
+                    Ok(()) => None,
+                    Err(e) => Some(e),
+                };
+                drop(_guard);
+                if let Some(e) = commit_err {
+                    let _ = alpm.trans_release();
+                    let _ = alpm.unlock();
+                    return Err(map_commit_error(
+                        e,
+                        "failed to commit ALPM upgrade (local pkg) transaction",
+                    )
+                    .into());
+                }
             }
             let _ = alpm.trans_release();
             Ok(0)
@@ -500,29 +788,104 @@ fn ask_helper_question(
 }
 
 fn emit(msg: &HelperToParent) -> Result<()> {
-    let mut out = std::io::stdout().lock();
-    serde_json::to_writer(&mut out, msg)?;
+    let mut mutex = HELPER_JSON_OUT
+        .lock()
+        .map_err(|_| anyhow!("helper JSON sink mutex poisoned"))?;
+    let out = mutex
+        .as_mut()
+        .ok_or_else(|| anyhow!("helper JSON sink was not initialized"))?;
+    serde_json::to_writer(&mut *out, msg)?;
     out.write_all(b"\n")?;
     out.flush()?;
     Ok(())
 }
 
+fn hook_when_label(w: HookWhen) -> &'static str {
+    match w {
+        HookWhen::PreTransaction => "pre-transaction",
+        HookWhen::PostTransaction => "post-transaction",
+    }
+}
+
 fn helper_event_cb(event: AnyEvent, c: &mut Colors) {
-    let message = match event.event() {
-        Event::ResolveDepsStart => format!("{} {}", c.action.paint("::"), c.bold.paint("Resolving dependencies...")),
-        Event::InterConflictsStart => format!("{} {}", c.action.paint("::"), c.bold.paint("Checking conflicts...")),
-        Event::IntegrityStart => format!("{} {}", c.action.paint("::"), c.bold.paint("Checking package integrity...")),
-        Event::LoadStart => format!("{} {}", c.action.paint("::"), c.bold.paint("Loading package files...")),
-        Event::KeyringStart => format!("{} {}", c.action.paint("::"), c.bold.paint("Checking keyring...")),
-        Event::DiskSpaceStart => format!("{} {}", c.action.paint("::"), c.bold.paint("Checking disk space...")),
-        Event::TransactionStart => format!("{} {}", c.action.paint("::"), c.bold.paint("Committing transaction...")),
-        Event::HookStart(_) => format!("{} {}", c.action.paint("::"), c.bold.paint("Running hooks...")),
-        Event::PackageOperationStart(_) => {
-            format!("{} {}", c.action.paint("::"), c.bold.paint("Applying package operation..."))
+    use Event::*;
+    let message_opt: Option<String> = match event.event() {
+        ScriptletInfo(s) => {
+            let line = sanitize_log_fragment(s.line());
+            if !line.is_empty() {
+                let _ = emit(&HelperToParent::LogLine {
+                    level: "scriptlet".to_string(),
+                    message: line,
+                });
+            }
+            None
         }
-        _ => return,
+        HookRunDone(_) => None,
+        ResolveDepsStart => Some(format!(
+            "{} {}",
+            c.action.paint("::"),
+            c.bold.paint("Resolving dependencies...")
+        )),
+        InterConflictsStart => Some(format!(
+            "{} {}",
+            c.action.paint("::"),
+            c.bold.paint("Checking conflicts...")
+        )),
+        IntegrityStart => Some(format!(
+            "{} {}",
+            c.action.paint("::"),
+            c.bold.paint("Checking package integrity...")
+        )),
+        LoadStart => Some(format!(
+            "{} {}",
+            c.action.paint("::"),
+            c.bold.paint("Loading package files...")
+        )),
+        KeyringStart => Some(format!(
+            "{} {}",
+            c.action.paint("::"),
+            c.bold.paint("Checking keyring...")
+        )),
+        DiskSpaceStart => Some(format!(
+            "{} {}",
+            c.action.paint("::"),
+            c.bold.paint("Checking disk space...")
+        )),
+        TransactionStart => Some(format!(
+            "{} {}",
+            c.action.paint("::"),
+            c.bold.paint("Committing transaction...")
+        )),
+        HookStart(he) => Some(format!(
+            "{} {} ({})",
+            c.action.paint("::"),
+            c.bold.paint("ALPM hooks"),
+            hook_when_label(he.when())
+        )),
+        HookDone(he) => Some(format!(
+            "{} {} ({}) finished",
+            c.action.paint("::"),
+            c.bold.paint("ALPM hooks"),
+            hook_when_label(he.when())
+        )),
+        HookRunStart(h) => Some(format!(
+            "{} {} [{}/{}] {}",
+            c.action.paint("::"),
+            c.bold.paint(h.name()),
+            h.position(),
+            h.total(),
+            h.desc().unwrap_or("")
+        )),
+        PackageOperationStart(_) => Some(format!(
+            "{} {}",
+            c.action.paint("::"),
+            c.bold.paint("Applying package operation...")
+        )),
+        _ => None,
     };
-    let _ = emit(&HelperToParent::Event { message });
+    if let Some(message) = message_opt {
+        let _ = emit(&HelperToParent::Event { message });
+    }
 }
 
 fn helper_progress_cb(
@@ -594,7 +957,6 @@ fn helper_question_cb(question: AnyQuestion, state: &mut QuestionIpcState) {
             Box::new(move |yes| q.set_skip(!yes)),
         ),
         alpm::Question::SelectProvider(mut q) => {
-            // Keep deterministic provider selection in helper mode.
             let default_index = 0i32;
             q.set_index(default_index);
             return;
