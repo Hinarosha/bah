@@ -15,7 +15,7 @@ use signal_hook::consts::signal::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
 use std::fs::{read_to_string, remove_file, File};
 use std::io::{BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use std::sync::Mutex;
@@ -182,14 +182,25 @@ fn validate_plan(plan: &TransactionPlan) -> Result<()> {
             if t.chars().any(|c| c == '\0' || c.is_control()) {
                 bail!("target contains forbidden control characters");
             }
+            // Block path traversal in repo/pkg strings and upgrade paths surfaced via IPC.
+            if t.contains("..") {
+                bail!("target must not contain '..'");
+            }
         }
         Ok(())
     };
 
     match plan {
-        TransactionPlan::Sync { targets, .. }
-        | TransactionPlan::Remove { targets, .. }
-        | TransactionPlan::Upgrade { targets, .. } => validate_targets(targets),
+        TransactionPlan::Sync { targets, .. } | TransactionPlan::Remove { targets, .. } => {
+            validate_targets(targets)
+        }
+        TransactionPlan::Upgrade { targets, .. } => {
+            validate_targets(targets)?;
+            for p in targets {
+                validate_upgrade_pkg_path(p)?;
+            }
+            Ok(())
+        }
         TransactionPlan::SetInstallReason { reason, packages, .. } => {
             if reason != "asdeps" && reason != "asexplicit" {
                 bail!("unsupported install reason '{}'", reason);
@@ -197,6 +208,20 @@ fn validate_plan(plan: &TransactionPlan) -> Result<()> {
             validate_targets(packages)
         }
     }
+}
+
+/// Rejects path tricks for local package installs: only absolute paths without `..` walk segments.
+fn validate_upgrade_pkg_path(p: &str) -> Result<()> {
+    let path = Path::new(p);
+    if !path.is_absolute() {
+        bail!("local package path must be absolute (got {})", p);
+    }
+    for c in path.components() {
+        if c == Component::ParentDir {
+            bail!("local package path must not contain '..'");
+        }
+    }
+    Ok(())
 }
 
 pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<Status> {
@@ -214,9 +239,14 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
     let child_stdout = child.stdout.take().context("failed to open helper stdout")?;
     let mut reader = BufReader::new(child_stdout);
 
-    serde_json::to_writer(&mut child_stdin, plan)?;
-    child_stdin.write_all(b"\n")?;
-    child_stdin.flush()?;
+    serde_json::to_writer(&mut child_stdin, plan)
+        .context("failed to serialize transaction plan to helper stdin")?;
+    child_stdin
+        .write_all(b"\n")
+        .context("failed to write plan newline to helper")?;
+    child_stdin
+        .flush()
+        .context("failed to flush transaction plan to helper")?;
 
     let mut line = String::new();
     let mut final_code: Option<i32> = None;
@@ -242,9 +272,14 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
                 default_yes,
             } => {
                 let yes = ask(config, &prompt, default_yes);
-                serde_json::to_writer(&mut child_stdin, &ParentToHelper::Answer { id, yes })?;
-                child_stdin.write_all(b"\n")?;
-                child_stdin.flush()?;
+                serde_json::to_writer(&mut child_stdin, &ParentToHelper::Answer { id, yes })
+                    .context("failed to write answer JSON to helper (broken pipe?)")?;
+                child_stdin
+                    .write_all(b"\n")
+                    .context("failed to write answer newline to helper")?;
+                child_stdin
+                    .flush()
+                    .context("failed to flush answer to helper")?;
             }
             HelperToParent::Result { code } => {
                 final_code = Some(code);
@@ -259,7 +294,8 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
     }
 
     let status = child.wait()?;
-    let code = final_code.unwrap_or_else(|| status.code().unwrap_or(1));
+    // `status.code()` is None when the child was terminated by signal; use a non‑zero sentinel.
+    let code = final_code.unwrap_or_else(|| status.code().unwrap_or(101));
     Ok(Status(code))
 }
 
@@ -406,6 +442,14 @@ fn transaction_touches_boot_sensitive_pkg(alpm: &alpm::Alpm) -> bool {
             .any(|p| pkg_requires_writable_boot(p.name()))
 }
 
+fn ensure_transaction_not_empty(alpm: &mut alpm::Alpm) -> Result<()> {
+    if alpm.trans_add().is_empty() && alpm.trans_remove().is_empty() {
+        let _ = alpm.trans_release();
+        bail!("refusing empty ALPM transaction: nothing to install, upgrade, or remove");
+    }
+    Ok(())
+}
+
 #[cfg(target_os = "linux")]
 fn ensure_boot_rw_for_transaction(alpm: &alpm::Alpm) -> Result<()> {
     if !transaction_touches_boot_sensitive_pkg(alpm) {
@@ -427,6 +471,22 @@ fn ensure_boot_rw_for_transaction(alpm: &alpm::Alpm) -> Result<()> {
         bail!(
             "{} is read-only. Mount it read-write (check fstab) before updating kernel, initramfs, or bootloader so hooks can refresh images and bootloaders.",
             boot.display()
+        );
+    }
+
+    // Cheap guard before hooks run: ALPM may also check space when CheckSpace is enabled in pacman.conf.
+    let vfs = nix::sys::statvfs::statvfs(boot.as_path())
+        .with_context(|| format!("statvfs on {} failed", boot.display()))?;
+    let fr = vfs.fragment_size() as u64;
+    let avail = vfs.blocks_available() as u64;
+    let avail_bytes = avail.saturating_mul(fr);
+    const MIN_BOOT_FREE: u64 = 8 * 1024 * 1024;
+    if avail_bytes < MIN_BOOT_FREE {
+        bail!(
+            "{} has critically low free space ({} bytes free; need at least ~{} MiB for kernel/initramfs hooks). Free space before upgrading.",
+            boot.display(),
+            avail_bytes,
+            MIN_BOOT_FREE / (1024 * 1024)
         );
     }
 
@@ -534,6 +594,7 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
             for target in targets {
                 add_target(&mut alpm, target)?;
             }
+            ensure_transaction_not_empty(&mut alpm)?;
             let sync_prep_err = match alpm.trans_prepare() {
                 Ok(()) => None,
                 Err(e) => Some(e.error()),
@@ -614,6 +675,7 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                 let pkg = alpm.localdb().pkg(target.as_str())?;
                 alpm.trans_remove_pkg(pkg)?;
             }
+            ensure_transaction_not_empty(&mut alpm)?;
             let remove_prep_err = match alpm.trans_prepare() {
                 Ok(()) => None,
                 Err(e) => Some(e.error()),
@@ -692,6 +754,7 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                 alpm.trans_add_pkg(loaded)
                     .map_err(|e| anyhow!("failed to add package file '{}': {}", target, e.error))?;
             }
+            ensure_transaction_not_empty(&mut alpm)?;
             let upgrade_prep_err = match alpm.trans_prepare() {
                 Ok(()) => None,
                 Err(e) => Some(e.error()),
@@ -991,9 +1054,11 @@ fn wait_parent_answer(id: u64) -> Option<bool> {
             return None;
         }
         if line.len() > MAX_IPC_LINE_BYTES {
-            return None;
+            continue;
         }
-        let msg: ParentToHelper = serde_json::from_str(line.trim()).ok()?;
+        let Ok(msg) = serde_json::from_str::<ParentToHelper>(line.trim()) else {
+            continue;
+        };
         match msg {
             ParentToHelper::Answer { id: got, yes } if got == id => return Some(yes),
             _ => continue,

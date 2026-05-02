@@ -1763,7 +1763,10 @@ pub fn review(config: &Config, fetch: &aur_fetch::Fetch, pkgs: &[&str]) -> Resul
                 command.arg("-c").arg(&pager).stdin(Stdio::piped());
                 let mut child = exec::spawn(&mut command)?;
 
-                let mut stdin = child.stdin.take().unwrap();
+                let mut stdin = child
+                    .stdin
+                    .take()
+                    .ok_or_else(|| anyhow::anyhow!("pager child stdin was not piped"))?;
 
                 if pager_unconfigured && pager == "less" {
                     let _ = write!(
