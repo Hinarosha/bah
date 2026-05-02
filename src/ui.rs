@@ -491,14 +491,15 @@ pub fn print_install_confirmation_table(
         .max()
         .unwrap_or(7)
         .min(40);
-    let ver_w = table
+    // Widest plain `v_old -> v_new` across rows (same idea as longest name column).
+    let ver_natural = table
         .rows
         .iter()
-        .map(|r| r.cells[1].width())
+        .filter_map(|r| r.tx.as_ref())
+        .map(|txp| version_plain(&txp.old_ver, &txp.new_ver).width())
         .chain(Some(table.headers[1].width()))
         .max()
-        .unwrap_or(7)
-        .min(34);
+        .unwrap_or(7);
     let dl_w = table
         .rows
         .iter()
@@ -507,8 +508,16 @@ pub fn print_install_confirmation_table(
         .max()
         .unwrap_or(8)
         .min(14);
-    let fixed = pkg_w + ver_w + dl_w + (col_gap * 3);
-    let detail_w = term_w.saturating_sub(fixed).max(12);
+
+    // Horizontal budget for Version + Detail after Package, Download and gaps — same spirit as search.
+    const MIN_DETAIL: usize = 12;
+    let remainder = term_w.saturating_sub(pkg_w + dl_w + col_gap * 3);
+    let hdr_ver_width = table.headers[1].width();
+    let mut ver_w = ver_natural.max(hdr_ver_width);
+    if ver_w + MIN_DETAIL > remainder {
+        ver_w = remainder.saturating_sub(MIN_DETAIL).max(hdr_ver_width);
+    }
+    let detail_w = remainder.saturating_sub(ver_w).max(MIN_DETAIL);
 
     let c = &config.color;
     println!();
@@ -541,7 +550,9 @@ pub fn print_install_confirmation_table(
             " ".repeat(ver_w.saturating_sub(ver_vis_w))
         );
         let ver_styled = if ver_trunc == ver_raw {
-            paint_version_cell(config, txp)
+            let painted = paint_version_cell(config, txp);
+            let pad = ver_w.saturating_sub(ver_raw.width());
+            format!("{}{}", painted, " ".repeat(pad))
         } else {
             format!("{}", c.field.paint(&ver_cell))
         };
