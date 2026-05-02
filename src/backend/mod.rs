@@ -38,6 +38,16 @@ fn allow_fallback() -> bool {
     )
 }
 
+fn backend_fallback_verbose() -> bool {
+    matches!(
+        std::env::var("BAH_BACKEND_DEBUG")
+            .ok()
+            .as_deref()
+            .map(|v| v.to_ascii_lowercase()),
+        Some(ref v) if v == "1" || v == "true" || v == "yes"
+    )
+}
+
 pub fn pacman<S: AsRef<str>>(config: &Config, args: &Args<S>) -> Result<Status> {
     let args = args.as_str();
     match selected_backend() {
@@ -47,26 +57,43 @@ pub fn pacman<S: AsRef<str>>(config: &Config, args: &Args<S>) -> Result<Status> 
             match backend.pacman(config, &args) {
                 Ok(status) => Ok(status),
                 Err(err) => {
-                    eprintln!(
-                        "{} {}: {} (op={} args={:?} targets={:?})",
-                        config.color.warning.paint("::"),
-                        "ALPM backend failed",
-                        err,
-                        args.op,
-                        args.args
-                            .iter()
-                            .map(|a| a.to_string())
-                            .collect::<Vec<_>>(),
-                        args.targets
-                    );
                     if allow_fallback() {
+                        if backend_fallback_verbose() {
+                            eprintln!(
+                                "{} {}: {} (op={} args={:?} targets={:?})",
+                                config.color.warning.paint("::"),
+                                "ALPM backend failed",
+                                err,
+                                args.op,
+                                args.args
+                                    .iter()
+                                    .map(|a| a.to_string())
+                                    .collect::<Vec<_>>(),
+                                args.targets
+                            );
+                            eprintln!(
+                                "{} {}",
+                                config.color.warning.paint("::"),
+                                "falling back to legacy pacman backend"
+                            );
+                        } else {
+                            eprintln!(
+                                "{} {}",
+                                config.color.field.paint("::"),
+                                format!(
+                                    "alpm: {} → {}",
+                                    err,
+                                    "using pacman (set BAH_BACKEND_DEBUG=1 for details)"
+                                )
+                            );
+                        }
+                        legacy_pacman::LegacyPacmanBackend.pacman(config, &args)
+                    } else {
                         eprintln!(
                             "{} {}",
                             config.color.warning.paint("::"),
-                            "falling back to legacy pacman backend"
+                            format!("ALPM backend failed ({})", err)
                         );
-                        legacy_pacman::LegacyPacmanBackend.pacman(config, &args)
-                    } else {
                         Err(err)
                     }
                 }

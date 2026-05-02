@@ -24,6 +24,7 @@ mod stats;
 mod subcommands;
 mod sync;
 mod tx_helper;
+pub mod ui;
 mod upgrade;
 mod util;
 

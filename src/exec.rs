@@ -6,7 +6,7 @@ use crate::config::Config;
 use std::ffi::OsStr;
 use std::fmt::{Debug, Display, Formatter};
 use std::path::Path;
-use std::process::{Child, Command, Output, Stdio};
+use std::process::{Child, Command, Output};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -200,15 +200,6 @@ fn new_pacman<S: AsRef<str> + Display + Debug>(config: &Config, args: &Args<S>) 
 pub fn pacman<S: AsRef<str> + Display + Debug>(config: &Config, args: &Args<S>) -> Result<Status> {
     let mut cmd = new_pacman(config, args);
     command_status(&mut cmd)
-}
-
-pub fn pacman_output<S: AsRef<str> + Display + std::fmt::Debug>(
-    config: &Config,
-    args: &Args<S>,
-) -> Result<Output> {
-    let mut cmd = new_pacman(config, args);
-    cmd.stdin(Stdio::inherit());
-    command_output(&mut cmd)
 }
 
 fn new_makepkg<S: AsRef<OsStr>>(

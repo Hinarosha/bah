@@ -391,6 +391,10 @@ fn log_level_to_tag(level: LogLevel) -> &'static str {
 }
 
 fn helper_log_cb(level: LogLevel, msg: &str, _: &mut ()) {
+    // IPC: warn/error only — debug/function/default noise stays on the tty (stderr) via ALPM elsewhere.
+    if !level.intersects(LogLevel::WARNING | LogLevel::ERROR) {
+        return;
+    }
     let line = sanitize_log_fragment(msg);
     if line.is_empty() {
         return;
@@ -448,6 +452,12 @@ fn ensure_transaction_not_empty(alpm: &mut alpm::Alpm) -> Result<()> {
         bail!("refusing empty ALPM transaction: nothing to install, upgrade, or remove");
     }
     Ok(())
+}
+
+/// `-Sy`/`-Su` flows may leave no pkgs while still being valid (“nothing to do” after refresh or empty upgrade).
+#[inline]
+fn sync_allows_empty_transaction(refresh_count: u8, sysupgrade_count: u8) -> bool {
+    refresh_count > 0 || sysupgrade_count > 0
 }
 
 #[cfg(target_os = "linux")]
@@ -594,7 +604,14 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
             for target in targets {
                 add_target(&mut alpm, target)?;
             }
-            ensure_transaction_not_empty(&mut alpm)?;
+            if alpm.trans_add().is_empty() && alpm.trans_remove().is_empty() {
+                let _ = alpm.trans_release();
+                if sync_allows_empty_transaction(*refresh_count, *sysupgrade_count) {
+                    return Ok(0);
+                }
+                bail!("refusing empty ALPM transaction: nothing to install, upgrade, or remove");
+            }
+
             let sync_prep_err = match alpm.trans_prepare() {
                 Ok(()) => None,
                 Err(e) => Some(e.error()),

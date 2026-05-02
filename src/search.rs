@@ -35,7 +35,6 @@ struct SearchRow {
 }
 
 enum SearchVerbose {
-    None,
     Alpm(Option<String>),
     Aur {
         home: Option<String>,
@@ -254,7 +253,6 @@ fn print_search_verbose(config: &Config, row: &SearchRow) {
     }
     let c = config.color;
     match &row.verbose {
-        SearchVerbose::None => {}
         SearchVerbose::Alpm(Some(url)) => {
             info::print(c, 14, config.cols, "    URL", url);
         }
