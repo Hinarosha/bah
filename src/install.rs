@@ -1122,7 +1122,6 @@ impl Installer {
                 config,
                 &table,
                 &totals,
-                &[11, 30, 32, 12, 80],
             );
         }
 

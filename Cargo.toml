@@ -1,13 +1,13 @@
 [package]
 name = "bah"
-version = "2.1.0"
-authors = ["morganamilo <morganamilo@archlinux.org>"]
+version = "2.3.2"
+authors = ["hinarosha <hinarosha@proton.me>"]
 edition = "2021"
 
-description = "Feature packed AUR helper"
-homepage = "https://github.com/Morganamilo/bah"
-repository = "https://github.com/Morganamilo/bah"
-documentation = "https://docs.rs/bah"
+description = "User friendly beautiful AUR helper"
+homepage = "https://github.com/Hinarosha/bah"
+repository = "https://github.com/Hinarosha/bah"
+documentation = "https://github.com/Hinarosha/bah"
 license = "GPL-3.0"
 keywords = ["archlinux", "arch", "alpm", "pacman", "aur"]
 include = ["src/**/*", "LICENSE", "README.md", "CHANGELOG.md", "help"]

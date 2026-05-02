@@ -50,6 +50,13 @@ fn backend_fallback_verbose() -> bool {
 
 pub fn pacman<S: AsRef<str>>(config: &Config, args: &Args<S>) -> Result<Status> {
     let args = args.as_str();
+    if args.has_arg("y", "refresh") {
+        println!(
+            "{} {}",
+            config.color.action.paint("::"),
+            config.color.bold.paint("syncing repos...")
+        );
+    }
     match selected_backend() {
         BackendKind::LegacyPacman => legacy_pacman::LegacyPacmanBackend.pacman(config, &args),
         BackendKind::Alpm => {

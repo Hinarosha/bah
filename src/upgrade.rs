@@ -212,6 +212,11 @@ pub async fn get_upgrades<'a, 'b>(
     config: &Config,
     resolver: &mut Resolver<'a, 'b, RaurHandle>,
 ) -> Result<Upgrades> {
+    println!(
+        "{} {}",
+        config.color.action.paint("::"),
+        config.color.bold.paint(tr!("Looking for upgrades..."))
+    );
     let (upgrades, devel_upgrades) = net_upgrades(config, resolver, true).await?;
     let (syncdbs, aurdbs) = repo::repo_aur_dbs(config);
 

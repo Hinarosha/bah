@@ -4,9 +4,12 @@
 //! Install flows use [`install_confirmation_bundle`] + [`print_install_confirmation_table`].
 
 use std::collections::HashSet;
+use std::fs::read_dir;
+use std::path::Path;
 
 use crate::config::Config;
-use crate::fmt::{aur_repo_hint, old_ver, truncate_to_width};
+use crate::fmt::{old_ver, truncate_to_width};
+use crate::info::get_terminal_width;
 use alpm::Ver;
 use aur_depends::{Actions, Base};
 use tr::tr;
@@ -19,7 +22,12 @@ const COL_GAP: &str = "  ";
 pub enum TxActionKind {
     Install,
     Upgrade,
-    Remove,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TxSourceKind {
+    Repo,
+    Aur,
 }
 
 /// One line in the confirmation grid.
@@ -34,6 +42,7 @@ pub struct ConfirmationRow {
 #[derive(Debug, Clone)]
 pub struct TxRowPaint {
     pub action: TxActionKind,
+    pub source: TxSourceKind,
     pub old_ver: String,
     pub new_ver: String,
 }
@@ -84,15 +93,6 @@ fn pad_plain(s: &str, width: usize) -> String {
         return t;
     }
     format!("{}{}", t, " ".repeat(width.saturating_sub(wplain)))
-}
-
-fn pad_plain_right(s: &str, width: usize) -> String {
-    let t = truncate_to_width(s, width);
-    let wplain = t.width();
-    if wplain >= width {
-        return t;
-    }
-    format!("{}{}", " ".repeat(width.saturating_sub(wplain)), t)
 }
 
 fn base_widths(table: &ConfirmationTable, caps: &[usize]) -> Vec<usize> {
@@ -191,15 +191,13 @@ fn style_for_action(c: &crate::config::Colors, k: TxActionKind) -> ansiterm::Sty
     match k {
         TxActionKind::Install => c.tx_install,
         TxActionKind::Upgrade => c.tx_upgrade,
-        TxActionKind::Remove => c.tx_remove,
     }
 }
 
-fn tx_action_tr(k: TxActionKind) -> String {
+fn tx_source_title(k: TxSourceKind) -> String {
     match k {
-        TxActionKind::Install => tr!("Install"),
-        TxActionKind::Upgrade => tr!("Upgrade"),
-        TxActionKind::Remove => tr!("Remove"),
+        TxSourceKind::Repo => tr!("Repository packages"),
+        TxSourceKind::Aur => tr!("AUR / PKGBUILD packages"),
     }
 }
 
@@ -263,11 +261,10 @@ pub fn install_confirmation_bundle<'a>(
     let mut totals = InstallConfirmTotals::default();
     let mut rows_out: Vec<ConfirmationRow> = Vec::new();
 
-    let op_h = tr!("Operation");
     let pkg_h = tr!("Package");
     let ver_h = tr!("Version");
     let dl_h = tr!("Download");
-    let detail_h = tr!("Detail");
+    let detail_h = tr!("Details");
 
     for base in &actions.build {
         totals.download_excludes_aur = true;
@@ -288,19 +285,17 @@ pub fn install_confirmation_bundle<'a>(
                         if old.is_empty() { None } else { Some(old.as_str()) },
                         &new,
                     );
-                    let label = format!("{}/{}", aur_repo_hint(config, &name), name);
                     let ver_plain = version_plain(&old, &new);
-                    let desc = pkg.pkg.description.clone().unwrap_or_default();
                     rows_out.push(ConfirmationRow {
                         cells: vec![
-                            tx_action_tr(action),
-                            label.clone(),
+                            name,
                             ver_plain.clone(),
-                            format_download_cell(None),
-                            truncate_to_width(&desc, 64),
+                            format_download_cell(aur_cached_pkg_size(config, &pkg.pkg.name, &new)),
+                            pkg.pkg.description.clone().unwrap_or_default(),
                         ],
                         tx: Some(TxRowPaint {
                             action,
+                            source: TxSourceKind::Aur,
                             old_ver: old,
                             new_ver: new,
                         }),
@@ -322,19 +317,17 @@ pub fn install_confirmation_bundle<'a>(
                         if old.is_empty() { None } else { Some(old.as_str()) },
                         &new,
                     );
-                    let label = format!("{}/{}", base.repo, name);
                     let ver_plain = version_plain(&old, &new);
-                    let desc = pkg.pkg.pkgdesc.clone().unwrap_or_default();
                     rows_out.push(ConfirmationRow {
                         cells: vec![
-                            tx_action_tr(action),
-                            label.clone(),
+                            name,
                             ver_plain.clone(),
-                            format_download_cell(None),
-                            truncate_to_width(&desc, 64),
+                            format_download_cell(aur_cached_pkg_size(config, &pkg.pkg.pkgname, &new)),
+                            pkg.pkg.pkgdesc.clone().unwrap_or_default(),
                         ],
                         tx: Some(TxRowPaint {
                             action,
+                            source: TxSourceKind::Aur,
                             old_ver: old,
                             new_ver: new,
                         }),
@@ -375,19 +368,17 @@ pub fn install_confirmation_bundle<'a>(
         if let Some(d) = disk_delta_for_repo_pkg(config, sync_pkg) {
             totals.disk_delta_bytes += d;
         }
-        let label = format!("{}/{}", sync_pkg.db().unwrap().name(), name);
         let ver_plain = version_plain(&old, &new);
-        let desc = sync_pkg.desc().unwrap_or("").to_string();
         rows_out.push(ConfirmationRow {
             cells: vec![
-                tx_action_tr(action),
-                label,
+                name.to_string(),
                 ver_plain.clone(),
                 dl_cell,
-                truncate_to_width(&desc, 64),
+                latest_changelog_or_desc(sync_pkg),
             ],
             tx: Some(TxRowPaint {
                 action,
+                source: TxSourceKind::Repo,
                 old_ver: old,
                 new_ver: new,
             }),
@@ -395,7 +386,7 @@ pub fn install_confirmation_bundle<'a>(
     }
 
     let mut table = ConfirmationTable::new(tr!("Package changes"));
-    table.headers = vec![op_h, pkg_h, ver_h, dl_h, detail_h];
+    table.headers = vec![pkg_h, ver_h, dl_h, detail_h];
     table.rows = rows_out;
     Some((table, totals))
 }
@@ -412,14 +403,62 @@ fn paint_version_cell(config: &Config, paint: &TxRowPaint) -> String {
     )
 }
 
-fn pad_visible_suffix(visible_w: usize, col_w: usize, painted: String) -> String {
-    let pad = col_w.saturating_sub(visible_w);
-    format!("{}{}", painted, " ".repeat(pad))
+fn read_first_changelog_line(pkg: &alpm::Package) -> Option<String> {
+    let mut cl = pkg.changelog().ok()?;
+    let mut buf = vec![0u8; 2048];
+    let n = std::io::Read::read(&mut cl, &mut buf).ok()?;
+    if n == 0 {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&buf[..n]);
+    text.lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(|line| line.to_string())
 }
 
-fn pad_visible_prefix(visible_w: usize, col_w: usize, painted: String) -> String {
-    let pad = col_w.saturating_sub(visible_w);
-    format!("{}{}", " ".repeat(pad), painted)
+fn latest_changelog_or_desc(pkg: &alpm::Package) -> String {
+    read_first_changelog_line(pkg)
+        .unwrap_or_else(|| pkg.desc().unwrap_or_default().to_string())
+}
+
+fn aur_cached_pkg_size(config: &Config, name: &str, ver: &str) -> Option<i64> {
+    fn scan_dir(dir: &Path, prefix: &str) -> Option<i64> {
+        let mut best = None;
+        for entry in read_dir(dir).ok()? {
+            let entry = entry.ok()?;
+            let file_name = entry.file_name();
+            let file_name = file_name.to_string_lossy();
+            if !file_name.starts_with(prefix) || !file_name.contains(".pkg.tar") {
+                continue;
+            }
+            let len = entry.metadata().ok()?.len() as i64;
+            best = Some(best.unwrap_or(0).max(len));
+        }
+        best
+    }
+
+    let prefix = format!("{name}-{ver}-");
+    for d in &config.pacman.cache_dir {
+        if let Some(sz) = scan_dir(Path::new(d), &prefix) {
+            return Some(sz);
+        }
+    }
+    None
+}
+
+fn section_separator_line(term_w: usize, title: &str) -> String {
+    let label = format!(" {} ", title);
+    if term_w <= label.width() + 2 {
+        return truncate_to_width(&label, term_w.max(1));
+    }
+    let side = (term_w - label.width()) / 2;
+    let mut out = String::with_capacity(term_w);
+    out.push_str(&"─".repeat(side));
+    out.push_str(&label);
+    let rem = term_w.saturating_sub(out.width());
+    out.push_str(&"─".repeat(rem));
+    out
 }
 
 /// Renders the install preview (structured rows, right-aligned download column) and a compact totals line.
@@ -427,102 +466,144 @@ pub fn print_install_confirmation_table(
     config: &Config,
     table: &ConfirmationTable,
     totals: &InstallConfirmTotals,
-    caps: &[usize],
 ) {
     if table.headers.is_empty() || table.rows.is_empty() {
         return;
     }
-    let ncol = 5usize;
+    let ncol = 4usize;
     if table.rows.iter().any(|r| r.cells.len() != ncol) {
         return;
     }
 
-    let mut w = base_widths(table, caps);
-    let term_w = config.cols.unwrap_or(120).max(72);
-    let gaps = COL_GAP.len() * (ncol - 1);
-    let last_i = ncol - 1;
-    let prefix_sum: usize = w[..last_i].iter().sum();
-    let slack = term_w.saturating_sub(prefix_sum + gaps).max(w[last_i]);
-    let max_last = caps.get(last_i).copied().unwrap_or(256).max(w[last_i]);
-    w[last_i] = slack.min(max_last);
+    let term_w = config
+        .cols
+        .or_else(get_terminal_width)
+        .unwrap_or(120)
+        .max(72)
+        .saturating_sub(1);
+    let col_gap = COL_GAP.len();
+
+    let pkg_w = table
+        .rows
+        .iter()
+        .map(|r| r.cells[0].width())
+        .chain(Some(table.headers[0].width()))
+        .max()
+        .unwrap_or(7)
+        .min(40);
+    let ver_w = table
+        .rows
+        .iter()
+        .map(|r| r.cells[1].width())
+        .chain(Some(table.headers[1].width()))
+        .max()
+        .unwrap_or(7)
+        .min(34);
+    let dl_w = table
+        .rows
+        .iter()
+        .map(|r| r.cells[2].width())
+        .chain(Some(table.headers[2].width()))
+        .max()
+        .unwrap_or(8)
+        .min(14);
+    let fixed = pkg_w + ver_w + dl_w + (col_gap * 3);
+    let detail_w = term_w.saturating_sub(fixed).max(12);
 
     let c = &config.color;
     println!();
     println!("{} {}", c.action.paint("::"), c.bold.paint(&table.title));
 
-    let hdr: String = (0..ncol)
-        .map(|i| {
-            let p = if i == 3 {
-                pad_plain_right(&table.headers[i], w[i])
-            } else {
-                pad_plain(&table.headers[i], w[i])
-            };
-            if i + 1 < ncol {
-                format!("{}{}", p, COL_GAP)
-            } else {
-                p
-            }
-        })
-        .collect();
-    println!("{}", c.field.paint(hdr));
+    const PKG_COL: usize = 0;
+    const VER_COL: usize = 1;
+    const DL_COL: usize = 2;
+    const DETAIL_COL: usize = 3;
 
-    const VER_COL: usize = 2;
-    const OP_COL: usize = 0;
-
-    for row in &table.rows {
-        let txp = match &row.tx {
-            Some(t) => t,
-            None => continue,
-        };
-
-        let op_plain = truncate_to_width(&row.cells[OP_COL], w[OP_COL]);
-        let op_vis_w = op_plain.width();
-        let op_styled = format!("{}", style_for_action(c, txp.action).paint(&op_plain));
-        let op_cell = pad_visible_suffix(op_vis_w, w[OP_COL], op_styled);
-
-        let pkg_plain = truncate_to_width(&row.cells[1], w[1]);
+    let hdr_pkg = truncate_to_width(&table.headers[PKG_COL], pkg_w);
+    let hdr_ver = truncate_to_width(&table.headers[VER_COL], ver_w);
+    let hdr_dl = truncate_to_width(&table.headers[DL_COL], dl_w);
+    let hdr_det = truncate_to_width(&table.headers[DETAIL_COL], detail_w);
+    let render_row = |row: &ConfirmationRow, txp: &TxRowPaint| {
+        let pkg_plain = truncate_to_width(&row.cells[PKG_COL], pkg_w);
         let pkg_vis_w = pkg_plain.width();
-        let pkg_cell = pad_visible_suffix(
-            pkg_vis_w,
-            w[1],
-            format!("{}", c.bold.paint(&pkg_plain)),
+        let pkg_cell = format!(
+            "{}{}",
+            pkg_plain,
+            " ".repeat(pkg_w.saturating_sub(pkg_vis_w))
         );
 
         let ver_raw = version_plain(&txp.old_ver, &txp.new_ver);
-        let ver_trunc = truncate_to_width(&ver_raw, w[VER_COL]);
+        let ver_trunc = truncate_to_width(&ver_raw, ver_w);
         let ver_vis_w = ver_trunc.width();
+        let ver_cell = format!(
+            "{}{}",
+            ver_trunc,
+            " ".repeat(ver_w.saturating_sub(ver_vis_w))
+        );
         let ver_styled = if ver_trunc == ver_raw {
             paint_version_cell(config, txp)
         } else {
-            format!("{}", c.field.paint(&ver_trunc))
+            format!("{}", c.field.paint(&ver_cell))
         };
-        let ver_cell = pad_visible_suffix(ver_vis_w, w[VER_COL], ver_styled);
 
-        let dl_plain = truncate_to_width(&row.cells[3], w[3]);
+        let dl_plain = truncate_to_width(&row.cells[DL_COL], dl_w);
         let dl_vis_w = dl_plain.width();
-        let dl_styled = format!("{}", c.stats_value.paint(&dl_plain));
-        let dl_cell = pad_visible_prefix(dl_vis_w, w[3], dl_styled);
-
-        let det_plain = truncate_to_width(&row.cells[last_i], w[last_i]);
-        let det_vis_w = det_plain.width();
-        let det_cell = pad_visible_suffix(
-            det_vis_w,
-            w[last_i],
-            format!("{}", c.install_version.paint(&det_plain)),
+        let dl_cell = format!(
+            "{}{}",
+            " ".repeat(dl_w.saturating_sub(dl_vis_w)),
+            dl_plain
         );
 
+        let detail_plain = truncate_to_width(&row.cells[DETAIL_COL], detail_w);
+        let detail_vis_w = detail_plain.width();
+        let detail_cell = format!(
+            "{}{}",
+            detail_plain,
+            " ".repeat(detail_w.saturating_sub(detail_vis_w))
+        );
         println!(
-            "{}{}{}{}{}{}{}{}{}",
-            op_cell,
+            "{}{}{}{}{}{}{}",
+            style_for_action(c, txp.action).paint(&pkg_cell),
             COL_GAP,
-            pkg_cell,
+            ver_styled,
             COL_GAP,
-            ver_cell,
+            c.stats_value.paint(&dl_cell),
             COL_GAP,
-            dl_cell,
-            COL_GAP,
-            det_cell
+            c.install_version.paint(&detail_cell)
         );
+    };
+
+    for source in [TxSourceKind::Aur, TxSourceKind::Repo] {
+        let has_rows = table.rows.iter().any(|r| r.tx.as_ref().is_some_and(|t| t.source == source));
+        if !has_rows {
+            continue;
+        }
+        println!(
+            "{}",
+            c.stats_line_separator
+                .paint(section_separator_line(term_w, &tx_source_title(source)))
+        );
+        println!(
+            "{}{:pkg_pad$}  {}{:ver_pad$}  {}{:dl_pad$}  {}",
+            c.field.paint(&hdr_pkg),
+            "",
+            c.field.paint(&hdr_ver),
+            "",
+            c.field.paint(&hdr_dl),
+            "",
+            c.field.paint(&hdr_det),
+            pkg_pad = pkg_w.saturating_sub(hdr_pkg.width()),
+            ver_pad = ver_w.saturating_sub(hdr_ver.width()),
+            dl_pad = dl_w.saturating_sub(hdr_dl.width()),
+        );
+        for row in &table.rows {
+            let Some(txp) = row.tx.as_ref() else {
+                continue;
+            };
+            if txp.source == source {
+                render_row(row, txp);
+            }
+        }
     }
 
     print_install_confirmation_summary(config, totals);
