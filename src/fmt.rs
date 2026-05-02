@@ -395,7 +395,7 @@ pub fn print_install(config: &Config, actions: &Actions, devel: &HashSet<String>
     println!();
 }
 
-fn repo<'a>(config: &'a Config, pkg: &str) -> &'a str {
+pub(crate) fn aur_repo_hint<'a>(config: &'a Config, pkg: &str) -> &'a str {
     let (_, dbs) = repo::repo_aur_dbs(config);
 
     if dbs.is_empty() {
@@ -411,7 +411,7 @@ fn repo<'a>(config: &'a Config, pkg: &str) -> &'a str {
     db
 }
 
-fn old_ver<'a>(config: &'a Config, pkg: &str) -> Option<&'a Ver> {
+pub(crate) fn old_ver<'a>(config: &'a Config, pkg: &str) -> Option<&'a Ver> {
     let (_, dbs) = repo::repo_aur_dbs(config);
 
     if dbs.is_empty() {
@@ -477,7 +477,7 @@ pub fn print_install_verbose(config: &Config, actions: &Actions, devel: &HashSet
             Base::Aur(base) => base
                 .pkgs
                 .iter()
-                .map(|pkg| repo(config, &pkg.pkg.name).len() + 1 + pkg.pkg.name.len())
+                .map(|pkg| aur_repo_hint(config, &pkg.pkg.name).len() + 1 + pkg.pkg.name.len())
                 .max(),
             Base::Pkgbuild(base) => base
                 .pkgs
@@ -602,7 +602,7 @@ pub fn print_install_verbose(config: &Config, actions: &Actions, devel: &HashSet
                         };
                         println!(
                             "{:<package_len$}  {:<old_len$}  {:<new_len$}  {}",
-                            format!("{}/{}", repo(config, &pkg.pkg.name), pkg.pkg.name),
+                            format!("{}/{}", aur_repo_hint(config, &pkg.pkg.name), pkg.pkg.name),
                             old_ver(config, &pkg.pkg.name)
                                 .map(|v| v.as_str())
                                 .unwrap_or_default(),

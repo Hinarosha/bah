@@ -302,9 +302,9 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
 fn print_log_line_for_parent(config: &Config, level: &str, message: &str) {
     let c = &config.color;
     let prefix = match level {
-        "error" => c.error.paint("[alpm]"),
-        "warning" => c.warning.paint("[alpm]"),
-        _ => c.field.paint("[alpm]"),
+        "error" => c.error.paint("[X]"),
+        "warning" => c.warning.paint("[!]"),
+        _ => c.field.paint("[·]"),
     };
     println!("{} {}", prefix, message);
 }

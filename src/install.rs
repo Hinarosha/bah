@@ -18,7 +18,7 @@ use crate::config::{Config, LocalRepos, Mode, Op, Sign, YesNoAllTree, YesNoAsk};
 use crate::devel::{fetch_devel_info, load_devel_info, save_devel_info, DevelInfo};
 use crate::download::{self, Bases};
 use crate::exec::{command_status, has_command};
-use crate::fmt::{print_indent, print_install, print_install_verbose};
+use crate::fmt::{print_indent, print_install_verbose};
 use crate::keys::check_pgp_keys;
 use crate::pkgbuild::PkgbuildRepo;
 use crate::resolver::{flags, resolver};
@@ -1111,7 +1111,19 @@ impl Installer {
         if config.pacman.verbose_pkg_lists {
             print_install_verbose(config, actions, &self.upgrades.devel);
         } else {
-            print_install(config, actions, &self.upgrades.devel);
+            let Some((table, totals)) =
+                crate::ui::install_confirmation_bundle(config, actions, &self.upgrades.devel)
+            else {
+                unreachable!(
+                    "empty install/build lists return early above"
+                );
+            };
+            crate::ui::print_install_confirmation_table(
+                config,
+                &table,
+                &totals,
+                &[11, 30, 32, 12, 80],
+            );
         }
 
         let has_make = if !config.chroot
@@ -1134,7 +1146,7 @@ impl Installer {
             if !ask(config, &tr!("Proceed to review?"), true) {
                 return Status::err(1);
             }
-        } else if !ask(config, &tr!("Proceed with installation?"), true) {
+        } else if !ask(config, &tr!("Do you want to continue?"), true) {
             return Status::err(1);
         }
 

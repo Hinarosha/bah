@@ -100,6 +100,11 @@ pub struct Colors {
     pub group: Style,
     pub stats_line_separator: Style,
     pub stats_value: Style,
+    /// Transaction confirmation: repo install rows (PACMAN-style verbs).
+    pub tx_install: Style,
+    pub tx_upgrade: Style,
+    pub tx_remove: Style,
+    pub tx_arrow: Style,
 }
 
 impl From<&str> for Colors {
@@ -143,6 +148,10 @@ impl Colors {
             group: Style::new().fg(Blue).bold(),
             stats_line_separator: Style::new().fg(Blue).bold(),
             stats_value: Style::new().fg(Cyan),
+            tx_install: Style::new().fg(Green),
+            tx_upgrade: Style::new().fg(Cyan),
+            tx_remove: Style::new().fg(Red),
+            tx_arrow: Style::new().fg(ansiterm::Color::Fixed(246)),
         }
     }
 }
