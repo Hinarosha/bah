@@ -41,8 +41,9 @@ cargo test --features mock
 
 ## Translating
 
-See https://github.com/Morganamilo/bah/discussions/433 for discussion on localization.
-You probably want to subscribe to this to be notified when translations need to be updated.
+**bah** is a fork of **[paru](https://github.com/Morganamilo/paru)**. Most locale files under `po/` descend from **paru’s gettext catalogues**; translator credits live in each `*.po` header. Read **[po/README.md](po/README.md)** for a short attribution note and upstream pointers.
+
+For **bah-specific** translation work (new strings after a fork, broken plural forms, typos), open an issue or PR on **[Hinarosha/bah](https://github.com/Hinarosha/bah)** — or reuse paru’s community workflow if you also contribute upstream: **[paru discussions](https://github.com/Morganamilo/paru/discussions)** (search for localization / i18n threads).
 
 ### New Languages
 
@@ -50,7 +51,7 @@ When translating to a new language try to stick to languages pacman already supp
 https://gitlab.archlinux.org/pacman/pacman/-/tree/master/src/pacman/po. For example using
 `es` over `es_ES`.
 
-To translate bah to a new language, copy the the template .pot file to the locale you
+To translate bah to a new language, copy the template `.pot` file to the locale you
 are translating to.
 
 For example, to translate bah to Japanese you would do:

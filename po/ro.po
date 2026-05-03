@@ -5,7 +5,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: bah VERSION\n"
-"Report-Msgid-Bugs-To: https://github.com/Morganamilo/bah\n"
+"Report-Msgid-Bugs-To: https://github.com/Hinarosha/bah\n"
 "POT-Creation-Date: 2026-01-08 17:40+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: Adrian Costin <adriancostin6@gmail.com>\n"
@@ -452,7 +452,7 @@ msgstr ""
 
 #: src/help.rs:40
 msgid ""
-"    --aurrpcur  <url>      Set an alternative URL for the AUR /rpc endpoint"
+"    --aurrpcurl  <url>      Set an alternative URL for the AUR /rpc endpoint"
 msgstr ""
 
 #: src/help.rs:41

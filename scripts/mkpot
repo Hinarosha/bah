@@ -3,7 +3,7 @@ set -e
 
 xtr \
 	-d bah \
-	--msgid-bugs-address https://github.com/Morganamilo/bah \
+	--msgid-bugs-address https://github.com/Hinarosha/bah \
 	--package-name=bah\
 	--package-version="$(awk -F '=' '/^version/ {print $2}' Cargo.toml | sed 's/\"//g')" \
 	-k printtr -k tr \

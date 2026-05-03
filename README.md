@@ -12,6 +12,10 @@ A **readable, conversational package manager** for [Arch Linux](https://archlinu
 
 **bah is a fork of [paru](https://github.com/Morganamilo/paru)** that has been heavily modified and evolved (UX, verbs, internals, hardening, and more). If you know paru, many concepts carry over; the goal of this fork is a different **interaction model** and a **clearer, nicer terminal UI**, not a pixel-perfect clone.
 
+## Translations
+
+Runtime strings use gettext (`tr!` / `printtr!`). The `po/` catalogues **inherit a lot from paru’s translation effort**; per-language **`Last-Translator`** and related headers in each `*.po` file name the people who worked on that locale. See **[po/README.md](po/README.md)** for attribution details and how to report translation issues for bah.
+
 ## The idea: talk to your package manager
 
 Instead of memorising opaque flag combinations for everyday tasks, you can use **verbs**:

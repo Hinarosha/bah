@@ -14,24 +14,85 @@ end
 set -l noopt 'not __fish_contains_opt -s G -s V -s P -s S -s D -s Q -s R -s U -s T -s F -s L -s C database query sync remove upgrade deptest files version repoctl chrootctl gendb'
 set -l listall "(bah -Pc | string replace ' ' \t)"
 set -l listpacman "(__fish_print_pacman_packages)"
-set -l show '__fish_contains_opt -s P show'
-set -l getpkgbuild '__fish_contains_opt -s G getpkgbuild'
-set -l repoctl '__fish_contains_opt -s L repoctl'
-set -l chrootctl '__fish_contains_opt -s C chrootctl'
+set -l show '__fish_contains_opt -s P show; or __fish_seen_subcommand_from news stats order'
+set -l getpkgbuild '__fish_contains_opt -s G getpkgbuild; or __fish_seen_subcommand_from clone getpkgbuild fetch'
+set -l repoctl '__fish_contains_opt -s L repoctl; or __fish_seen_subcommand_from repo repolist'
+set -l chrootctl '__fish_contains_opt -s C chrootctl; or __fish_seen_subcommand_from chroot'
 
 # Pacman constants
 set -l listinstalled "(pacman -Q | string replace ' ' \t)"
 set -l listrepos "(__fish_print_bah_repos)"
 set -l listgroups "(pacman -Sg)\t'Package Group'"
-set -l database '__fish_contains_opt -s D database'
-set -l query '__fish_contains_opt -s Q query'
-set -l remove '__fish_contains_opt -s R remove'
-set -l sync '__fish_contains_opt -s S sync'
+set -l database '__fish_contains_opt -s D database; or __fish_seen_subcommand_from database'
+set -l query '__fish_contains_opt -s Q query; or __fish_seen_subcommand_from query'
+set -l remove '__fish_contains_opt -s R remove; or __fish_seen_subcommand_from remove uninstall rm'
+set -l sync '__fish_contains_opt -s S sync; or __fish_seen_subcommand_from install update upgrade sync up clean list'
 set -l upgrade '__fish_contains_opt -s U upgrade'
-set -l files '__fish_contains_opt -s F files'
+set -l files '__fish_contains_opt -s F files; or __fish_seen_subcommand_from files'
+set -l bah_info_verb '__fish_seen_subcommand_from info'
 
 complete -c $progname -e
 complete -c $progname -f
+
+# First argument: plain English verbs (TAB after "bah ")
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a search -d 'Search repos and AUR (-Ss)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a find -d 'Alias for search'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a install -d 'Install packages (-S)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a remove -d 'Remove packages (-R)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a uninstall -d 'Alias for remove'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a rm -d 'Alias for remove'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a query -d 'Query local DB (-Q)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a info -d 'Package info (-Si)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a build -d 'Build PKGBUILD dirs (-B)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a clone -d 'Get PKGBUILD (-G)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a getpkgbuild -d 'Alias for clone'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a fetch -d 'Alias for clone'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a news -d 'Arch news (-Pw)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a stats -d 'Package statistics (-P --stats)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a order -d 'Build order (-P --order)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a files -d 'Files DB (-F)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a database -d 'Database (-D)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a deptest -d 'Dependency test (-T)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a repo -d 'Local repos (-L)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a repolist -d 'Alias for repo'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a chroot -d 'Chroot shell (-C)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a clean -d 'Sync cache clean (-S -c)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a list -d 'Repo package list (-Sl)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a help -d 'Help (-h)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a version -d 'Version (-V)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a update -d 'Refresh & upgrade (-Syu)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a upgrade -d 'Same as update / optional pkg args (-S)'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a sync -d 'Alias for update'
+complete -c $progname -f -n '__fish_is_nth_token 2; and not string match "-*" (commandline -ct)' \
+    -a up -d 'Alias for update'
 # HACK: We only need these two to coerce fish to stop file completion and complete options
 complete -c $progname -n "$noopt" -a "-D" -d "Modify the package database"
 complete -c $progname -n "$noopt" -a "-Q" -d "Query the package database"
@@ -146,10 +207,15 @@ complete -c $progname -n "$remove" -d 'Installed package' -xa "$listinstalled"
 complete -c $progname -n "$sync" -s c -l clean -d 'Remove [all] packages from cache' -f
 complete -c $progname -n "$sync" -s i -l info -d 'View PACKAGE [extended] information' -f
 complete -c $progname -n "$sync" -s l -l list -d 'List all packages in REPOSITORY' -xa "$listrepos"
-complete -c $progname -n "$sync" -s s -l search -d 'Search remote repositories for regexp' -f
+complete -c $progname -n "$sync; or __fish_seen_subcommand_from search find" -s s -l search -d 'Search remote repositories for regexp' -f
 complete -c $progname -n "$sync" -s u -l sysupgrade -d 'Upgrade all packages that are out of date'
 complete -c $progname -n "$sync" -s w -l downloadonly -d 'Only download the target packages'
 complete -c $progname -n "$sync" -xa "$listall $listgroups"
+complete -c $progname -n "$bah_info_verb" -xa "$listall $listgroups"
+
+complete -c $progname -n '__fish_seen_subcommand_from search find' -f -d 'Search term'
+
+complete -c $progname -n '__fish_seen_subcommand_from build' -xa '(__fish_complete_directories)'
 
 # Upgrade options
 # Theoretically, pacman reads packages in all formats that libarchive supports

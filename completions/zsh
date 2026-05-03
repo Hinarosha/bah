@@ -518,8 +518,57 @@ _pacman_get_command() {
 # main dispatcher
 _pacman_zsh_comp() {
 	local -a args cmds;
-	local tmp
+	local tmp op_word
 	args=( ${${${(M)words:#-*}#-}:#-*} )
+
+	# Plain verbs: bah search … (see src/subcommands.rs). Offer verbs when completing a prefixed first argument.
+	if (( CURRENT == 2 )) && [[ ${words[2]} != -* ]] && [[ ! ${words[2]} =~ '^(\./|/)' ]]; then
+		local -a bah_verbs matches
+		bah_verbs=(search find install remove uninstall rm query info build clone getpkgbuild fetch news stats order files database deptest repo repolist chroot clean list help version update upgrade sync up)
+		matches=( "${(@M)bah_verbs:#${words[2]}*}" )
+		if [[ -n ${words[2]} ]] && (( ${#matches} > 0 )); then
+			_description verbs expl 'bah command'
+			compadd "$@" -a matches
+			return
+		fi
+	fi
+
+	# Map verbs / implicit search (bah vlc …) to pacman-style flag letters for the rest of this completion.
+	if (( ${#args} == 0 )) && (( CURRENT >= 2 )) && [[ -n ${words[2]} ]] && [[ ${words[2]} != -* ]] && [[ ! ${words[2]} =~ '^(\./|/)' ]]; then
+		op_word=${${words[2]}:l}
+		case $op_word in
+			search|find) args=(Ss) ;;
+			install) args=(S) ;;
+			remove|uninstall|rm) args=(R) ;;
+			query) args=(Q) ;;
+			info) args=(Si) ;;
+			build) args=(B) ;;
+			clone|getpkgbuild|fetch) args=(G) ;;
+			news|stats|order) args=(P) ;;
+			files) args=(F) ;;
+			database) args=(D) ;;
+			deptest) args=(T) ;;
+			repo|repolist) args=(L) ;;
+			chroot) args=(C) ;;
+			clean) args=(Sc) ;;
+			list) args=(Sl) ;;
+			help) args=(h) ;;
+			version) args=(V) ;;
+			update|upgrade|sync|up)
+				if (( ${#words} > 2 )) && [[ -n ${words[3]} ]]; then
+					args=(S)
+				else
+					args=(Syu)
+				fi
+				;;
+			*)
+				if (( CURRENT >= 3 )); then
+					args=(Ss)
+				fi
+				;;
+		esac
+	fi
+
 	for tmp in $words; do
 		cmds+=("${${_pacman_opts_commands[(r)*$tmp\[*]%%\[*}#*\)}")
 	done

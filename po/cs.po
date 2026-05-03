@@ -6,7 +6,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: bah  2.0.0\n"
-"Report-Msgid-Bugs-To: https://github.com/Morganamilo/bah\n"
+"Report-Msgid-Bugs-To: https://github.com/Hinarosha/bah\n"
 "POT-Creation-Date: 2026-01-08 17:40+0000\n"
 "PO-Revision-Date: 2025-12-20 02:00+0100\n"
 "Last-Translator: Martin Kozák <martin.kozak@outlook.cz>\n"
@@ -446,8 +446,8 @@ msgstr "    --aururl    <url>      Nastavit alternativní AUR URL"
 
 #: src/help.rs:40
 msgid ""
-"    --aurrpcur  <url>      Set an alternative URL for the AUR /rpc endpoint"
-msgstr "    --aurrpcur  <url>      Nastavit alternativní AUR URL /rpc endpoint"
+"    --aurrpcurl  <url>      Set an alternative URL for the AUR /rpc endpoint"
+msgstr "    --aurrpcurl  <url>      Nastavit alternativní AUR URL /rpc endpoint"
 
 #: src/help.rs:41
 msgid "    --clonedir  <dir>      Directory used to download and run PKGBUILDs"

@@ -1,6 +1,33 @@
 use crate::printtr;
 
 pub fn help() {
+    printtr!("bah — conversational package manager for Arch and the AUR (fork of paru, heavily modified).");
+    printtr!("It drives installs and sync through libalpm with its own UI; pacman is still used when falling back.");
+    println!();
+    printtr!("Plain commands (first argument, case-insensitive); anything starting with '-' stays pacman-style:");
+    printtr!("    search|find <terms...>     ->  bah -Ss <terms...>");
+    printtr!("    install <pkgs...>          ->  bah -S <pkgs...>");
+    printtr!("    remove|uninstall|rm <pkgs...> ->  bah -R <pkgs...>");
+    printtr!("    query <args...>            ->  bah -Q <args...>");
+    printtr!("    info <pkgs...>             ->  bah -Si <pkgs...>");
+    printtr!("    build <dirs...>            ->  bah -B <dirs...>");
+    printtr!("    clone|getpkgbuild|fetch <pkgs...> ->  bah -G <pkgs...>");
+    printtr!("    news                       ->  bah -Pw");
+    printtr!("    stats                      ->  bah -P --stats");
+    printtr!("    order                      ->  bah -P --order");
+    printtr!("    files <args...>            ->  bah -F <args...>");
+    printtr!("    database <args...>         ->  bah -D <args...>");
+    printtr!("    deptest <args...>          ->  bah -T <args...>");
+    printtr!("    repo|repolist              ->  bah -L");
+    printtr!("    chroot                     ->  bah -C");
+    printtr!("    clean [args...]            ->  bah -S -c [args...] (sync cache clean; see pacman -S -c)");
+    printtr!("    list                       ->  bah -Sl");
+    printtr!("    help                       ->  bah -h");
+    printtr!("    version                    ->  bah -V");
+    printtr!("    update|upgrade|sync|up     ->  bah -Syu with no args; else bah -S <pkgs...>");
+    printtr!("Any other first word (not a path): treated as search terms -> bah -Ss <terms...>");
+    printtr!("Paths ./foo or /foo are not rewritten (PKGBUILD / sync behaviour unchanged).");
+    println!();
     printtr!("Usage:");
     printtr!("    bah");
     printtr!("    bah <operation> [...]");
@@ -37,7 +64,7 @@ pub fn help() {
         "    --interactive          Enable interactive package selection for -S, -R, -Ss and -Qs"
     );
     printtr!("    --aururl    <url>      Set an alternative AUR URL");
-    printtr!("    --aurrpcur  <url>      Set an alternative URL for the AUR /rpc endpoint");
+    printtr!("    --aurrpcurl <url>      Set an alternative URL for the AUR /rpc endpoint");
     printtr!("    --clonedir  <dir>      Directory used to download and run PKGBUILDs");
     println!();
     printtr!("    --makepkg   <file>     makepkg command to use");

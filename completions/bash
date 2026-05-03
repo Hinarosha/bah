@@ -53,8 +53,107 @@ _bah() {
   local common core cur database files prev query remove sync upgrade o
   local show getpkgbuild
   local cur prev words cword
+  local verbs bah_implicit_search verb_handled
 
   _init_completion || return
+
+  # Plain-word verbs: bah search … ≈ bah -Ss … (see src/subcommands.rs). First column TAB completes these plus pacman-style -S/-Q/…
+  verbs='search find install remove uninstall rm query info build clone getpkgbuild fetch news stats order files database deptest repo repolist chroot clean list help version update upgrade sync up'
+  if [[ $COMP_CWORD -eq 1 ]]; then
+    if [[ $cur == -* ]]; then
+      _arch_ptr2comp core
+    else
+      local tmp_reply
+      _arch_compgen $verbs
+      tmp_reply=("${COMPREPLY[@]}")
+      _arch_ptr2comp core
+      local i
+      for i in "${tmp_reply[@]}"; do
+        COMPREPLY+=("$i")
+      done
+    fi
+    return 0
+  fi
+
+  bah_implicit_search=false
+  verb_handled=false
+  o=""
+  if [[ $COMP_CWORD -ge 2 ]] && [[ ${COMP_WORDS[1]} != -* ]]; then
+    verb_handled=true
+    case ${COMP_WORDS[1]} in
+      search | find)
+        o='S sync'
+        ;;
+      install)
+        o='S sync'
+        ;;
+      remove | uninstall | rm)
+        o='R remove'
+        ;;
+      query)
+        o='Q query'
+        ;;
+      info)
+        o='S sync'
+        ;;
+      build)
+        o='B build'
+        ;;
+      clone | getpkgbuild | fetch)
+        o='G getpkgbuild'
+        ;;
+      news | stats | order)
+        o='P show'
+        ;;
+      files)
+        o='F files'
+        ;;
+      database)
+        o='D database'
+        ;;
+      deptest)
+        o='T deptest'
+        ;;
+      repo | repolist)
+        o='L repoctl'
+        ;;
+      chroot)
+        o='C chrootctl'
+        ;;
+      clean)
+        o='S sync'
+        ;;
+      list)
+        o='S sync'
+        ;;
+      help)
+        _arch_ptr2comp core
+        return 0
+        ;;
+      version)
+        COMPREPLY=()
+        return 0
+        ;;
+      update | upgrade | sync | up)
+        o='S sync'
+        ;;
+      *)
+        o='S sync'
+        bah_implicit_search=true
+        ;;
+    esac
+  fi
+
+  if [[ $verb_handled != true ]]; then
+    for o in 'D database' 'F files' 'Q query' 'R remove' 'S sync' 'U upgrade' 'P show' 'G getpkgbuild' 'C chrootctl' 'L repoctl'; do
+      _arch_incomp "$o" && break
+    done
+  fi
+
+  if [[ -z $o ]]; then
+    _arch_ptr2comp core
+    return 0
+  fi
   database=('asdeps asexplicit')
   files=('list machinereadable refresh regex' 'l x y')
   query=('changelog check deps explicit file foreign groups info list native owns
@@ -84,13 +183,7 @@ _bah() {
   chrootctl=('sysupgrade install' 'u i')
   repoctl=('quiet list delete refresh clean' 'q l d y c')
 
-  for o in 'D database' 'F files' 'Q query' 'R remove' 'S sync' 'U upgrade' 'P show' 'G getpkgbuild' 'C chrootctl' 'L repoctl'; do
-    _arch_incomp "$o" && break
-  done
-
-  if [[ $? != 0 ]]; then
-    _arch_ptr2comp core
-  elif [[ ! $prev =~ ^-[[:alnum:]_]*[Vbhr] && ! $prev == --@(cachedir|color|config|dbpath|help|hookdir|gpgdir|logfile|root|version) ]]; then
+  if [[ ! $prev =~ ^-[[:alnum:]_]*[Vbhr] && ! $prev == --@(cachedir|color|config|dbpath|help|hookdir|gpgdir|logfile|root|version) ]]; then
     [[ $cur == -* ]] && _arch_ptr2comp ${o#* } common ||
       case ${o% *} in
       D | R)
@@ -111,8 +204,12 @@ _bah() {
         ;;
       S)
         { _arch_incomp 'g groups' && _pacman_pkg Sg; } ||
+          { [[ ${COMP_WORDS[1]} == list ]] && _pacman_repo_list; } ||
           { _arch_incomp 'l list' && _pacman_repo_list; } ||
           { _arch_incomp 's search' && compopt +o default; } ||
+          { [[ ${COMP_WORDS[1]} == @(search|find) ]] && compopt +o default; } ||
+          { [[ $bah_implicit_search == true ]] && compopt +o default; } ||
+          { [[ ${COMP_WORDS[1]} == info ]] && _bah_pkg; } ||
           _bah_pkg
         ;;
       U)
@@ -120,6 +217,22 @@ _bah() {
         ;;
       G)
         _bah_pkg
+        ;;
+      P)
+        [[ $cur == -* ]] && _arch_ptr2comp ${o#* } common || compopt +o default
+        ;;
+      L)
+        [[ $cur == -* ]] && _arch_ptr2comp repoctl common || compopt +o default
+        ;;
+      C)
+        [[ $cur == -* ]] && _arch_ptr2comp chrootctl common || compopt +o default
+        ;;
+      B)
+        compopt +o filenames
+        _filedir -d
+        ;;
+      T)
+        [[ $cur == -* ]] && _arch_ptr2comp common || compopt +o default
         ;;
       esac
   fi

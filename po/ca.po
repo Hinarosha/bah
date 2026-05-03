@@ -6,7 +6,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: bah VERSION\n"
-"Report-Msgid-Bugs-To: https://github.com/Morganamilo/bah\n"
+"Report-Msgid-Bugs-To: https://github.com/Hinarosha/bah\n"
 "POT-Creation-Date: 2026-01-08 17:40+0000\n"
 "PO-Revision-Date: 2022-12-08 01:06+0100\n"
 "Last-Translator: Ícar N. S. <icar.nin@protonmail.com>\n"
@@ -448,9 +448,9 @@ msgstr "    --aururl    <url>      Especifica una URL alternativa per l'AUR"
 
 #: src/help.rs:40
 msgid ""
-"    --aurrpcur  <url>      Set an alternative URL for the AUR /rpc endpoint"
+"    --aurrpcurl  <url>      Set an alternative URL for the AUR /rpc endpoint"
 msgstr ""
-"    --aurrpcur  <url>      Indica una URL alternativa per l'endpoint /rpc de "
+"    --aurrpcurl  <url>      Indica una URL alternativa per l'endpoint /rpc de "
 "l'AUR"
 
 #: src/help.rs:41

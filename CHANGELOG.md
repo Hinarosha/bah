@@ -115,7 +115,7 @@
 bah v2.0.0 comes after a long time of no releases, mostly due to a lack of free time
 and a lot of changes that needed a lot of work to get done.
 
-This update brings a lot of big changes, mostly aimed at power users, and a handul of general
+This update brings a lot of big changes, mostly aimed at power users, and a handful of general
 improvements and quality of life changes.
 
 As there's not been a release in so long, consider a lot of the things here not battle tested,

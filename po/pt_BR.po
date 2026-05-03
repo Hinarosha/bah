@@ -2,13 +2,13 @@
 # Copyright (C) YEAR THE bah'S COPYRIGHT HOLDER
 # This file is distributed under the same license as the bah package.
 # Pedro Liberatti <ferrahwolfeh@protonmail.com>, 2021.
-# Morgana Milo <morganamilo@archlinux.org>, 2021.
+# Morgana Milo <Hinarosha@archlinux.org>, 2021.
 # Juliano Marcelino <github@jmarcelino.com.br>, 2021.
 # João Vitor S. Anjos <jvanjos@protonmail.com>, 2021-2024.
 msgid ""
 msgstr ""
 "Project-Id-Version: bah VERSION\n"
-"Report-Msgid-Bugs-To: https://github.com/Morganamilo/bah\n"
+"Report-Msgid-Bugs-To: https://github.com/Hinarosha/bah\n"
 "POT-Creation-Date: 2026-01-08 17:40+0000\n"
 "PO-Revision-Date: 2026-01-08 22:47-0300\n"
 "Last-Translator: Igor\n"
@@ -445,9 +445,9 @@ msgstr "    --aururl    <url>      Define uma URL alternativa do AUR"
 
 #: src/help.rs:40
 msgid ""
-"    --aurrpcur  <url>      Set an alternative URL for the AUR /rpc endpoint"
+"    --aurrpcurl  <url>      Set an alternative URL for the AUR /rpc endpoint"
 msgstr ""
-"    --aurrpcur  <url>      Define uma URL alternativa para o endpoint /rpc "
+"    --aurrpcurl  <url>      Define uma URL alternativa para o endpoint /rpc "
 "do AUR"
 
 #: src/help.rs:41

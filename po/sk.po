@@ -6,7 +6,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: bah  2.0.0\n"
-"Report-Msgid-Bugs-To: https://github.com/Morganamilo/bah\n"
+"Report-Msgid-Bugs-To: https://github.com/Hinarosha/bah\n"
 "POT-Creation-Date: 2026-01-08 17:40+0000\n"
 "PO-Revision-Date: 2024-10-14 13:14+0200\n"
 "Last-Translator: Jose Riha <jose1711@gmail.com>\n"
@@ -446,9 +446,9 @@ msgstr "    --aururl    <url>      Nastaviť alternatívnu URL adresu AUR"
 
 #: src/help.rs:40
 msgid ""
-"    --aurrpcur  <url>      Set an alternative URL for the AUR /rpc endpoint"
+"    --aurrpcurl  <url>      Set an alternative URL for the AUR /rpc endpoint"
 msgstr ""
-"    --aurrpcur  <url>      Nastaviť alternatívnu URL adresu AUR /rpc "
+"    --aurrpcurl  <url>      Nastaviť alternatívnu URL adresu AUR /rpc "
 "endpointu"
 
 #: src/help.rs:41

@@ -9,7 +9,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: bah  1.10.0\n"
-"Report-Msgid-Bugs-To: https://github.com/Morganamilo/bah\n"
+"Report-Msgid-Bugs-To: https://github.com/Hinarosha/bah\n"
 "POT-Creation-Date: 2026-01-08 17:40+0000\n"
 "PO-Revision-Date: 2025-12-21 22:33+0100\n"
 "Last-Translator: Eliott Leboeuf <eliott.leboeuf@gmail.com>\n"
@@ -450,9 +450,9 @@ msgstr "    --aururl    <url>      Définir une URL alternative pour l'AUR"
 
 #: src/help.rs:40
 msgid ""
-"    --aurrpcur  <url>      Set an alternative URL for the AUR /rpc endpoint"
+"    --aurrpcurl  <url>      Set an alternative URL for the AUR /rpc endpoint"
 msgstr ""
-"    --aurrpcur  <url>      Définir une URL alternative pour l'AUR / RPC "
+"    --aurrpcurl  <url>      Définir une URL alternative pour l'AUR / RPC "
 "distant"
 
 #: src/help.rs:41

@@ -1,8 +1,8 @@
-.TH "bah" "8" "2021\-03\-24" "bah v1.10.0 "bah Manual"
+.TH "bah" "8" "2026\-05\-02" "bah v2.4.1" "bah Manual"
 .nh
 .ad l
 .SH NAME
-bah \- AUR helper and pacman wrapper
+bah \- conversational AUR helper for Arch Linux (libalpm; fork of paru)
 
 .SH SYNOPSIS
 \fIbah\fR <operation> [options] [targets]
@@ -12,15 +12,109 @@ bah \- AUR helper and pacman wrapper
 \fIbah\fR
 
 .SH DESCRIPTION
-bah is an AUR helper written in Rust and based on the design of yay. It aims
-to be your standard pacman wrapping AUR helper with minimal interaction.
+\fIbah\fR is a package manager front\-end for Arch Linux and the AUR: readable prompts,
+clear listings, and optional plain\-English command words instead of memorising every
+\fIpacman\fR flag.
 
-bah is a tool to easily build and install packages from the AUR, along with
-their dependencies. bah also expands many of pacman's options making them
-AUR aware.
+\fIbah\fR is a \fBfork of paru\fR that has been substantially modified (UX, verbs,
+internals, and behaviour).
 
-This manpage only covers options unique to bah. For other options see
-\fBpacman(8)\fR.
+Normal sync, remove, and upgrade work is handled through \fBlibalpm\fR inside \fIbah\fR
+with its own resolver and UI; the \fIpacman\fR binary remains available and is used when
+\fIbah\fR falls back or delegates for compatibility.
+
+\fIbah\fR expands many of \fIpacman\fR's operations so they are AUR\-aware. This manpage
+only covers options unique to \fIbah\fR; for flags shared with pacman see \fBpacman(8)\fR.
+
+.SS Verb commands
+If the first argument does not start with \(oq\fB\-.\fR\(cq, it may be a verb alias
+(case\-insensitive) or implicit search terms. Leading \(oq\fB./\fR\(cq or \(oq\fB/\fR\(cq paths are never rewritten.
+
+.TP
+.BR search ", " find " ..."
+Equivalent to \fBah \-Ss\fR \.\.\..
+
+.TP
+.B install " ..."
+Equivalent to \fBah \-S\fR \.\.\..
+
+.TP
+.BR remove ", " uninstall ", " rm " ..."
+Equivalent to \fBah \-R\fR \.\.\..
+
+.TP
+.B query " ..."
+Equivalent to \fBah \-Q\fR \.\.\..
+
+.TP
+.B info " ..."
+Equivalent to \fBah \-Si\fR \.\.\..
+
+.TP
+.B build " ..."
+Equivalent to \fBah \-B\fR \.\.\..
+
+.TP
+.BR clone ", " getpkgbuild ", " fetch " ..."
+Equivalent to \fBah \-G\fR \.\.\..
+
+.TP
+.B news
+Equivalent to \fBah \-Pw\fR.
+
+.TP
+.B stats
+Equivalent to \fBah \-P \-\-stats\fR.
+
+.TP
+.B order
+Equivalent to \fBah \-P \-\-order\fR.
+
+.TP
+.B files " ..."
+Equivalent to \fBah \-F\fR \.\.\..
+
+.TP
+.B database " ..."
+Equivalent to \fBah \-D\fR \.\.\..
+
+.TP
+.B deptest " ..."
+Equivalent to \fBah \-T\fR \.\.\..
+
+.TP
+.BR repo ", " repolist
+Equivalent to \fBah \-L\fR.
+
+.TP
+.B chroot
+Equivalent to \fBah \-C\fR.
+
+.TP
+.B clean " ..."
+Equivalent to \fBah \-S \-c\fR with remaining arguments (clean package cache during sync; see \fBpacman\fR(8)).
+
+.TP
+.B list
+Equivalent to \fBah \-Sl\fR.
+
+.TP
+.B help
+Equivalent to \fBah \-h\fR.
+
+.TP
+.B version
+Equivalent to \fBah \-V\fR.
+
+.TP
+.BR update ", " upgrade ", " sync ", " up
+With no further arguments: full refresh and upgrade (\fBah \-Syu\fR).
+Otherwise: \fBah \-S\fR with the remaining targets.
+
+.TP
+.I other
+Any other first token (not a path as above) is treated as the start of search terms:
+equivalent to \fBah \-Ss\fR with all arguments.
 
 .SH bah OPERATIONS
 .TP
@@ -848,7 +942,7 @@ See the arch wiki at https://wiki.archlinux.org/index.php/Arch_User_Repository
 for more info on the \fBAUR\fR.
 
 .SH BUGS
-Please report bugs to our GitHub page \fBhttps://github.com/Morganamilo/bah\fR.
+Please report bugs to our GitHub page \fBhttps://github.com/Hinarosha/bah\fR.
 
 .SH AUTHORS
-Morgan <morganamilo@archlinux.org>
+Hinarosha <hinarosha@proton.me>
