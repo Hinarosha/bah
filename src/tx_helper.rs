@@ -1,5 +1,6 @@
 use crate::config::{Colors, Config};
 use crate::exec::Status;
+use crate::fmt::truncate_to_width;
 use crate::util::ask;
 
 use alpm::{
@@ -9,11 +10,14 @@ use alpm::{
 use alpm_utils::DbListExt;
 use alpm_sys::alpm_handle_t;
 use anyhow::{anyhow, bail, Context, Result};
+use chrono::Local;
+#[cfg(target_os = "linux")]
+use nix::unistd::{access, AccessFlags};
 use nix::unistd::{dup, dup2_stdout, Uid};
 use serde::{Deserialize, Serialize};
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
-use std::fs::{read_to_string, remove_file, File};
+use std::fs::{read_to_string, remove_file, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -30,6 +34,95 @@ static HELPER_JSON_OUT: Mutex<Option<File>> = Mutex::new(None);
 
 static ACTIVE_COMMIT_HANDLE: AtomicPtr<alpm_handle_t> = AtomicPtr::new(std::ptr::null_mut());
 static SIG_THREAD_STARTED: AtomicBool = AtomicBool::new(false);
+/// When false, the helper ignores SIGINT/SIGTERM for `alpm_trans_interrupt` so hooks (e.g. mkinitcpio) are not torn down mid-write.
+static COMMIT_INTERRUPT_ALLOWED: AtomicBool = AtomicBool::new(true);
+
+/// Persistent audit trail for `/boot` checks and commit lifecycle (helper runs as root).
+const BAH_AUDIT_LOG_PATH: &str = "/var/log/bah.log";
+
+fn bah_audit_log(msg: &str) {
+    #[cfg(target_os = "linux")]
+    {
+        let ts = Local::now().format("%Y-%m-%d %H:%M:%S%.3f %z");
+        if let Ok(mut f) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(BAH_AUDIT_LOG_PATH)
+        {
+            let _ = writeln!(
+                f,
+                "[{}] [bah-helper:{}] {}",
+                ts,
+                std::process::id(),
+                msg
+            );
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = msg;
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn mountinfo_mount_point(line: &str) -> Option<String> {
+    let before_sep = line.split(" - ").next()?;
+    let mut it = before_sep.split_whitespace();
+    let _ = it.next()?; // mount id
+    let _ = it.next()?; // parent id
+    let _ = it.next()?; // maj:minor
+    let _ = it.next()?; // root within fs
+    let mp = it.next()?;
+    Some(
+        mp.replace("\\040", " ")
+            .replace("\\011", "\t")
+            .replace("\\134", "\\"),
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn boot_mountinfo_summary(boot: &Path) -> String {
+    let wanted = boot.to_string_lossy().into_owned();
+    let norm_wanted = wanted.trim_end_matches('/').to_string();
+    let Ok(buf) = read_to_string("/proc/self/mountinfo") else {
+        return "(read mountinfo failed)".to_string();
+    };
+    let mut hits = Vec::new();
+    for line in buf.lines() {
+        let Some(mp) = mountinfo_mount_point(line) else {
+            continue;
+        };
+        let norm_mp = mp.trim_end_matches('/');
+        let under = format!("{norm_wanted}/");
+        if norm_mp == norm_wanted || mp.starts_with(&under) {
+            hits.push(line.trim().to_string());
+        }
+    }
+    if hits.is_empty() {
+        "(no mountinfo line matched boot path)".to_string()
+    } else {
+        let joined = hits.join(" | ");
+        truncate_to_width(&joined, 900)
+    }
+}
+
+/// Wraps `trans_commit`: defers Ctrl+C interrupt requests until commit returns so scriptlets are not killed mid-write.
+struct CommitInterruptDefer;
+
+impl CommitInterruptDefer {
+    fn new() -> Self {
+        COMMIT_INTERRUPT_ALLOWED.store(false, Ordering::Release);
+        bah_audit_log("trans_commit: SIGINT/SIGTERM -> alpm_trans_interrupt suppressed until commit completes");
+        Self
+    }
+}
+
+impl Drop for CommitInterruptDefer {
+    fn drop(&mut self) {
+        COMMIT_INTERRUPT_ALLOWED.store(true, Ordering::Release);
+        bah_audit_log("trans_commit: SIGINT/SIGTERM interrupt path re-enabled");
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -320,9 +413,18 @@ fn ensure_sig_interrupt_thread_started() {
             let Ok(mut signals) = Signals::new([SIGINT, SIGTERM]) else {
                 return;
             };
-            for _sig in signals.forever() {
+            for sig in signals.forever() {
+                if !COMMIT_INTERRUPT_ALLOWED.load(Ordering::Acquire) {
+                    bah_audit_log(&format!(
+                        "signal {sig} ignored (protected trans_commit; hooks must finish)"
+                    ));
+                    continue;
+                }
                 let p = ACTIVE_COMMIT_HANDLE.load(Ordering::Acquire);
                 if !p.is_null() {
+                    bah_audit_log(&format!(
+                        "signal {sig}: requesting alpm_trans_interrupt"
+                    ));
                     unsafe {
                         let _ = alpm_sys::alpm_trans_interrupt(p);
                     };
@@ -463,26 +565,68 @@ fn sync_allows_empty_transaction(refresh_count: u8, sysupgrade_count: u8) -> boo
 #[cfg(target_os = "linux")]
 fn ensure_boot_rw_for_transaction(alpm: &alpm::Alpm) -> Result<()> {
     if !transaction_touches_boot_sensitive_pkg(alpm) {
+        bah_audit_log("ensure_boot_rw: skipped (no boot-sensitive packages in transaction)");
         return Ok(());
     }
     let boot: PathBuf = Path::new(alpm.root()).join("boot");
+    bah_audit_log(&format!(
+        "ensure_boot_rw: begin alpm.root={} boot_path={}",
+        alpm.root(),
+        boot.display()
+    ));
+
     if !boot.exists() {
+        bah_audit_log(&format!(
+            "ensure_boot_rw: FAIL path missing {}",
+            boot.display()
+        ));
         bail!(
             "{} does not exist. Mount your EFI/boot partition before updating kernel, initramfs, or bootloader.",
             boot.display()
         );
     }
 
+    bah_audit_log(&format!(
+        "ensure_boot_rw: mountinfo snapshot {}",
+        boot_mountinfo_summary(&boot)
+    ));
+
     let st = nix::sys::statfs::statfs(boot.as_path())
         .with_context(|| format!("statfs on {} failed (is /boot mounted?)", boot.display()))?;
 
     use nix::sys::statvfs::FsFlags;
-    if st.flags().contains(FsFlags::ST_RDONLY) {
+    let ro = st.flags().contains(FsFlags::ST_RDONLY);
+    bah_audit_log(&format!(
+        "ensure_boot_rw: statfs path={} ST_RDONLY={}",
+        boot.display(),
+        ro
+    ));
+    if ro {
+        bah_audit_log(&format!(
+            "ensure_boot_rw: FAIL read-only mount {}",
+            boot.display()
+        ));
         bail!(
             "{} is read-only. Mount it read-write (check fstab) before updating kernel, initramfs, or bootloader so hooks can refresh images and bootloaders.",
             boot.display()
         );
     }
+
+    // statfs can still miss edge cases (permissions, automount races); check writable search bit too.
+    access(&boot, AccessFlags::W_OK).with_context(|| {
+        bah_audit_log(&format!(
+            "ensure_boot_rw: FAIL access(W_OK) on {}",
+            boot.display()
+        ));
+        format!(
+            "cannot write to {} (access W_OK failed); hooks may fail to refresh /boot",
+            boot.display()
+        )
+    })?;
+    bah_audit_log(&format!(
+        "ensure_boot_rw: access(W_OK) OK on {}",
+        boot.display()
+    ));
 
     // Cheap guard before hooks run: ALPM may also check space when CheckSpace is enabled in pacman.conf.
     let vfs = nix::sys::statvfs::statvfs(boot.as_path())
@@ -491,7 +635,14 @@ fn ensure_boot_rw_for_transaction(alpm: &alpm::Alpm) -> Result<()> {
     let avail = vfs.blocks_available() as u64;
     let avail_bytes = avail.saturating_mul(fr);
     const MIN_BOOT_FREE: u64 = 8 * 1024 * 1024;
+    bah_audit_log(&format!(
+        "ensure_boot_rw: statvfs avail_bytes={avail_bytes} (min_hint={MIN_BOOT_FREE})"
+    ));
     if avail_bytes < MIN_BOOT_FREE {
+        bah_audit_log(&format!(
+            "ensure_boot_rw: FAIL low free space on {}",
+            boot.display()
+        ));
         bail!(
             "{} has critically low free space ({} bytes free; need at least ~{} MiB for kernel/initramfs hooks). Free space before upgrading.",
             boot.display(),
@@ -500,6 +651,10 @@ fn ensure_boot_rw_for_transaction(alpm: &alpm::Alpm) -> Result<()> {
         );
     }
 
+    bah_audit_log(&format!(
+        "ensure_boot_rw: OK {}",
+        boot.display()
+    ));
     Ok(())
 }
 
@@ -627,12 +782,11 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                     let _ = alpm.trans_release();
                     return Err(e);
                 }
-                let _guard = ActiveCommitGuard::arm(&alpm);
-                let commit_err = match alpm.trans_commit() {
-                    Ok(()) => None,
-                    Err(e) => Some(e),
+                let commit_err = {
+                    let _defer_int = CommitInterruptDefer::new();
+                    let _guard = ActiveCommitGuard::arm(&alpm);
+                    alpm.trans_commit().err()
                 };
-                drop(_guard);
                 if let Some(e) = commit_err {
                     let _ = alpm.trans_release();
                     let _ = alpm.unlock();
@@ -711,12 +865,11 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                     let _ = alpm.trans_release();
                     return Err(e);
                 }
-                let _guard = ActiveCommitGuard::arm(&alpm);
-                let commit_err = match alpm.trans_commit() {
-                    Ok(()) => None,
-                    Err(e) => Some(e),
+                let commit_err = {
+                    let _defer_int = CommitInterruptDefer::new();
+                    let _guard = ActiveCommitGuard::arm(&alpm);
+                    alpm.trans_commit().err()
                 };
-                drop(_guard);
                 if let Some(e) = commit_err {
                     let _ = alpm.trans_release();
                     let _ = alpm.unlock();
@@ -790,12 +943,11 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                     let _ = alpm.trans_release();
                     return Err(e);
                 }
-                let _guard = ActiveCommitGuard::arm(&alpm);
-                let commit_err = match alpm.trans_commit() {
-                    Ok(()) => None,
-                    Err(e) => Some(e),
+                let commit_err = {
+                    let _defer_int = CommitInterruptDefer::new();
+                    let _guard = ActiveCommitGuard::arm(&alpm);
+                    alpm.trans_commit().err()
                 };
-                drop(_guard);
                 if let Some(e) = commit_err {
                     let _ = alpm.trans_release();
                     let _ = alpm.unlock();
