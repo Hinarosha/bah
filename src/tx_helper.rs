@@ -12,13 +12,21 @@ use alpm_sys::alpm_handle_t;
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::Local;
 #[cfg(target_os = "linux")]
-use nix::unistd::{access, AccessFlags};
+use nix::fcntl::{open, openat, AtFlags, OFlag};
+#[cfg(target_os = "linux")]
+use nix::sys::stat::{fchmod, Mode};
+#[cfg(target_os = "linux")]
+use nix::sys::statfs::fstatfs;
+#[cfg(target_os = "linux")]
+use nix::sys::statvfs::{fstatvfs, FsFlags};
+#[cfg(target_os = "linux")]
+use nix::unistd::{faccessat, AccessFlags};
 use nix::unistd::{dup, dup2_stdout, Uid};
 use serde::{Deserialize, Serialize};
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
-use std::fs::{read_to_string, remove_file, File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::fs::{read_to_string, remove_file, File};
+use std::io::{BufRead, BufReader, ErrorKind, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
@@ -40,15 +48,100 @@ static COMMIT_INTERRUPT_ALLOWED: AtomicBool = AtomicBool::new(true);
 /// Persistent audit trail for `/boot` checks and commit lifecycle (helper runs as root).
 const BAH_AUDIT_LOG_PATH: &str = "/var/log/bah.log";
 
+/// Hardened PATH and removal of dynamic-loader overrides so pacman hooks (mkinitcpio, grub, etc.)
+/// cannot be tricked into executing attacker-controlled code via `LD_PRELOAD` or a user-writable PATH entry.
+#[cfg(target_os = "linux")]
+fn sanitize_helper_environment() {
+    let keys: Vec<String> = std::env::vars().map(|(k, _)| k).collect();
+    for k in keys {
+        if k.starts_with("LD_") || k.starts_with("DYLD_") {
+            std::env::remove_var(&k);
+            continue;
+        }
+        match k.as_str() {
+            "PERL5LIB" | "PYTHONPATH" | "RUBYLIB" | "NODE_PATH" => std::env::remove_var(&k),
+            _ => {}
+        }
+    }
+    std::env::set_var(
+        "PATH",
+        "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    );
+}
+
+/// Reads until `\n` or EOF without buffering more than `max_body_bytes` (excluding the delimiter).
+fn read_until_newline_limited<R: BufRead>(
+    reader: &mut R,
+    max_body_bytes: usize,
+) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut one = [0u8; 1];
+    loop {
+        let n = reader.read(&mut one).context("read stdin/pipe")?;
+        if n == 0 {
+            break;
+        }
+        if one[0] == b'\n' {
+            break;
+        }
+        if out.len() >= max_body_bytes {
+            bail!(
+                "input line exceeded maximum size ({} bytes)",
+                max_body_bytes
+            );
+        }
+        out.push(one[0]);
+    }
+    Ok(out)
+}
+
+/// One JSON IPC line from parent ↔ helper; caps memory use per line (DoS hardening).
+fn read_ipc_line_bounded<R: BufRead>(reader: &mut R) -> std::io::Result<Option<String>> {
+    let mut buf = Vec::new();
+    let mut one = [0u8; 1];
+    loop {
+        let n = reader.read(&mut one)?;
+        if n == 0 {
+            return Ok(if buf.is_empty() {
+                None
+            } else {
+                Some(String::from_utf8(buf).map_err(|_| {
+                    std::io::Error::new(ErrorKind::InvalidData, "IPC line is not valid UTF-8")
+                })?)
+            });
+        }
+        if one[0] == b'\n' {
+            return Ok(Some(String::from_utf8(buf).map_err(|_| {
+                std::io::Error::new(ErrorKind::InvalidData, "IPC line is not valid UTF-8")
+            })?));
+        }
+        if buf.len() >= MAX_IPC_LINE_BYTES {
+            return Err(std::io::Error::new(
+                ErrorKind::InvalidData,
+                format!("IPC line exceeds {} bytes", MAX_IPC_LINE_BYTES),
+            ));
+        }
+        buf.push(one[0]);
+    }
+}
+
 fn bah_audit_log(msg: &str) {
     #[cfg(target_os = "linux")]
     {
         let ts = Local::now().format("%Y-%m-%d %H:%M:%S%.3f %z");
-        if let Ok(mut f) = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(BAH_AUDIT_LOG_PATH)
-        {
+        // O_NOFOLLOW: refuse if /var/log/bah.log is a symlink (no follower overwrite of arbitrary paths).
+        // fchmod: tighten mode even when the file already existed with loose permissions.
+        if let Ok(fd) = open(
+            std::path::Path::new(BAH_AUDIT_LOG_PATH),
+            OFlag::O_WRONLY
+                | OFlag::O_APPEND
+                | OFlag::O_CREAT
+                | OFlag::O_NOFOLLOW
+                | OFlag::O_CLOEXEC,
+            Mode::from_bits_truncate(0o600),
+        ) {
+            let _ = fchmod(&fd, Mode::from_bits_truncate(0o600));
+            let mut f = File::from(fd);
             let _ = writeln!(
                 f,
                 "[{}] [bah-helper:{}] {}",
@@ -227,15 +320,13 @@ pub fn run_helper_transaction(config: &Config) -> Result<i32> {
         bail!("--helper-transaction must be run as root");
     }
 
+    #[cfg(target_os = "linux")]
+    sanitize_helper_environment();
+
     let stdin = std::io::stdin();
     let mut locked = stdin.lock();
-    let mut buf = Vec::new();
-    locked
-        .read_until(b'\n', &mut buf)
-        .context("failed to read helper transaction plan from stdin")?;
-    if buf.len() > MAX_PLAN_BYTES {
-        bail!("helper transaction plan exceeded max size ({} bytes)", MAX_PLAN_BYTES);
-    }
+    let buf =
+        read_until_newline_limited(&mut locked, MAX_PLAN_BYTES).context("helper transaction plan")?;
     if buf.is_empty() {
         bail!("helper transaction plan is empty");
     }
@@ -341,14 +432,17 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
         .flush()
         .context("failed to flush transaction plan to helper")?;
 
-    let mut line = String::new();
     let mut final_code: Option<i32> = None;
 
-    while reader.read_line(&mut line)? != 0 {
+    loop {
+        let line = match read_ipc_line_bounded(&mut reader).context("read helper IPC line")? {
+            Some(l) => l,
+            None => break,
+        };
+
         let msg: HelperToParent = match serde_json::from_str(line.trim()) {
             Ok(v) => v,
             Err(_) => {
-                line.clear();
                 continue;
             }
         };
@@ -382,8 +476,6 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
                 bail!("helper error: {}", message);
             }
         }
-
-        line.clear();
     }
 
     let status = child.wait()?;
@@ -575,31 +667,61 @@ fn ensure_boot_rw_for_transaction(alpm: &alpm::Alpm) -> Result<()> {
         boot.display()
     ));
 
-    if !boot.exists() {
+    // Resolve `{root}/boot` via `openat` + `O_NOFOLLOW`: rejects symlinks under root (no checker-followed
+    // `/boot` → attacker FS). All further checks use the same fd (`fstatfs`, `fstatvfs`, `faccessat`).
+    let root_fd = open(
+        Path::new(alpm.root()),
+        OFlag::O_PATH | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .with_context(|| {
         bah_audit_log(&format!(
-            "ensure_boot_rw: FAIL path missing {}",
+            "ensure_boot_rw: FAIL open root O_PATH ({})",
+            alpm.root()
+        ));
+        format!(
+            "cannot open pacman root {} (missing path or symlink chain?)",
+            alpm.root()
+        )
+    })?;
+
+    let boot_fd = openat(
+        &root_fd,
+        "boot",
+        OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|e| {
+        bah_audit_log(&format!(
+            "ensure_boot_rw: FAIL open boot under root ({}) err={e}",
             boot.display()
         ));
-        bail!(
-            "{} does not exist. Mount your EFI/boot partition before updating kernel, initramfs, or bootloader.",
+        e
+    })
+    .with_context(|| {
+        format!(
+            "{} does not exist or is not a real directory (symlinks under the chroot root are rejected). Mount your EFI/boot partition before updating kernel, initramfs, or bootloader.",
             boot.display()
-        );
-    }
+        )
+    })?;
 
     bah_audit_log(&format!(
         "ensure_boot_rw: mountinfo snapshot {}",
         boot_mountinfo_summary(&boot)
     ));
 
-    let st = nix::sys::statfs::statfs(boot.as_path())
-        .with_context(|| format!("statfs on {} failed (is /boot mounted?)", boot.display()))?;
+    let st = fstatfs(&boot_fd).with_context(|| {
+        bah_audit_log(&format!(
+            "ensure_boot_rw: FAIL fstatfs boot fd ({})",
+            boot.display()
+        ));
+        format!("statfs on {} failed (is /boot mounted?)", boot.display())
+    })?;
 
-    use nix::sys::statvfs::FsFlags;
     let ro = st.flags().contains(FsFlags::ST_RDONLY);
     bah_audit_log(&format!(
-        "ensure_boot_rw: statfs path={} ST_RDONLY={}",
+        "ensure_boot_rw: fstatfs boot_fd ST_RDONLY={ro} path={}",
         boot.display(),
-        ro
     ));
     if ro {
         bah_audit_log(&format!(
@@ -612,10 +734,16 @@ fn ensure_boot_rw_for_transaction(alpm: &alpm::Alpm) -> Result<()> {
         );
     }
 
-    // statfs can still miss edge cases (permissions, automount races); check writable search bit too.
-    access(&boot, AccessFlags::W_OK).with_context(|| {
+    // Writable bit via dirfd: same inode we just inspected (no path re-resolution between check and statfs).
+    faccessat(
+        &boot_fd,
+        ".",
+        AccessFlags::W_OK,
+        AtFlags::AT_EACCESS,
+    )
+    .with_context(|| {
         bah_audit_log(&format!(
-            "ensure_boot_rw: FAIL access(W_OK) on {}",
+            "ensure_boot_rw: FAIL faccessat(W_OK) on {}",
             boot.display()
         ));
         format!(
@@ -624,13 +752,12 @@ fn ensure_boot_rw_for_transaction(alpm: &alpm::Alpm) -> Result<()> {
         )
     })?;
     bah_audit_log(&format!(
-        "ensure_boot_rw: access(W_OK) OK on {}",
+        "ensure_boot_rw: faccessat(W_OK) OK on {}",
         boot.display()
     ));
 
     // Cheap guard before hooks run: ALPM may also check space when CheckSpace is enabled in pacman.conf.
-    let vfs = nix::sys::statvfs::statvfs(boot.as_path())
-        .with_context(|| format!("statvfs on {} failed", boot.display()))?;
+    let vfs = fstatvfs(&boot_fd).with_context(|| format!("fstatvfs on {} failed", boot.display()))?;
     let fr = vfs.fragment_size() as u64;
     let avail = vfs.blocks_available() as u64;
     let avail_bytes = avail.saturating_mul(fr);
@@ -1218,13 +1345,13 @@ fn helper_question_cb(question: AnyQuestion, state: &mut QuestionIpcState) {
 fn wait_parent_answer(id: u64) -> Option<bool> {
     let stdin = std::io::stdin();
     loop {
-        let mut line = String::new();
-        if stdin.lock().read_line(&mut line).ok()? == 0 {
-            return None;
-        }
-        if line.len() > MAX_IPC_LINE_BYTES {
-            continue;
-        }
+        let mut locked = stdin.lock();
+        let line = match read_ipc_line_bounded(&mut locked) {
+            Ok(Some(l)) => l,
+            Ok(None) => return None,
+            Err(_) => return None,
+        };
+        drop(locked);
         let Ok(msg) = serde_json::from_str::<ParentToHelper>(line.trim()) else {
             continue;
         };
