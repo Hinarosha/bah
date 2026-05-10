@@ -14,6 +14,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use log::debug;
+use nix::libc;
 use signal_hook::consts::signal::*;
 use signal_hook::flag as signal_flag;
 use std::sync::LazyLock;
@@ -133,6 +134,20 @@ pub fn spawn(cmd: &mut Command) -> Result<Child> {
     debug!("running command: {:?}", cmd);
     cmd.spawn().with_context(|| command_err(cmd))
 }
+
+pub fn take_caught_signal() -> usize {
+    (*CAUGHT_SIGNAL).swap(0, Ordering::Relaxed)
+}
+
+#[cfg(unix)]
+pub fn forward_sigint_to_pid(pid: u32) {
+    unsafe {
+        let _ = libc::kill(pid as libc::pid_t, libc::SIGINT);
+    }
+}
+
+#[cfg(not(unix))]
+pub fn forward_sigint_to_pid(_pid: u32) {}
 
 pub fn wait(cmd: &Command, child: &mut Child) -> Result<Status> {
     let status = child

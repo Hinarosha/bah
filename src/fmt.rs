@@ -254,5 +254,3 @@ pub fn print_dnf_like_rows(config: &Config, rows: &[ListRow]) {
         );
     }
 }
-
-

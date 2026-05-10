@@ -1,5 +1,5 @@
-use crate::config::{Config, LocalRepos, Sign};
 use crate::backend;
+use crate::config::{Config, LocalRepos, Sign};
 use crate::exec::{self, command_status};
 use crate::fmt::print_indent;
 use crate::printtr;

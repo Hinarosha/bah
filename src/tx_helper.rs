@@ -6,8 +6,7 @@ use crate::util::ask;
 
 use alpm::{
     AnyDownloadEvent, AnyEvent, AnyQuestion, CommitError, DownloadEvent, DownloadResult,
-    Error as AlpmError, Event, HookWhen, LogLevel, PackageOperation, Progress, SigLevel,
-    TransFlag,
+    Error as AlpmError, Event, HookWhen, LogLevel, PackageOperation, Progress, SigLevel, TransFlag,
 };
 use alpm_sys::alpm_handle_t;
 use alpm_utils::DbListExt;
@@ -30,9 +29,12 @@ use signal_hook::iterator::Signals;
 use std::fs::{read_to_string, remove_file, File};
 use std::io::{BufRead, BufReader, ErrorKind, Write};
 use std::path::{Component, Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
-use std::sync::Mutex;
+use std::sync::{
+    mpsc::{channel, RecvTimeoutError},
+    Arc, Mutex,
+};
 use std::time::{Duration, Instant};
 
 const MAX_PLAN_BYTES: usize = 128 * 1024;
@@ -40,11 +42,13 @@ const MAX_TARGETS: usize = 4096;
 const MAX_TARGET_LEN: usize = 4096;
 const MAX_IPC_LINE_BYTES: usize = 16 * 1024;
 const MAX_LOG_MESSAGE_BYTES: usize = 8192;
+const PACMAN_DB_LOCK: &str = "/var/lib/pacman/db.lck";
 
 static HELPER_JSON_OUT: Mutex<Option<File>> = Mutex::new(None);
 
 static ACTIVE_COMMIT_HANDLE: AtomicPtr<alpm_handle_t> = AtomicPtr::new(std::ptr::null_mut());
 static SIG_THREAD_STARTED: AtomicBool = AtomicBool::new(false);
+static INTERRUPT_REQUESTED: AtomicBool = AtomicBool::new(false);
 /// When false, the helper ignores SIGINT/SIGTERM for `alpm_trans_interrupt` so hooks (e.g. mkinitcpio) are not torn down mid-write.
 static COMMIT_INTERRUPT_ALLOWED: AtomicBool = AtomicBool::new(true);
 
@@ -197,10 +201,10 @@ fn boot_mountinfo_summary(boot: &Path) -> String {
 }
 
 /// Wraps `trans_commit`: defers Ctrl+C interrupt requests until commit returns so scriptlets are not killed mid-write.
-struct CommitInterruptDefer;
+pub(crate) struct CommitInterruptDefer;
 
 impl CommitInterruptDefer {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         COMMIT_INTERRUPT_ALLOWED.store(false, Ordering::Release);
         bah_audit_log("trans_commit: SIGINT/SIGTERM -> alpm_trans_interrupt suppressed until commit completes");
         Self
@@ -212,6 +216,53 @@ impl Drop for CommitInterruptDefer {
         COMMIT_INTERRUPT_ALLOWED.store(true, Ordering::Release);
         bah_audit_log("trans_commit: SIGINT/SIGTERM interrupt path re-enabled");
     }
+}
+
+#[derive(Debug)]
+pub struct InterruptedError;
+
+impl std::fmt::Display for InterruptedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "operation interrupted")
+    }
+}
+
+impl std::error::Error for InterruptedError {}
+
+fn cleanup_pacman_lock(config: &Config) -> Result<()> {
+    let lock = Path::new(PACMAN_DB_LOCK);
+    if !lock.exists() {
+        return Ok(());
+    }
+
+    let mut cmd = Command::new(&config.sudo_bin);
+    cmd.args(&config.sudo_flags).arg("rm").arg("-f").arg(lock);
+    let status = crate::exec::command_status(&mut cmd)?;
+    status
+        .success()
+        .context("failed to remove stale pacman db lock after interruption")?;
+    Ok(())
+}
+
+fn wait_helper_exit(child: &mut Child, timeout: Duration) -> Result<Status> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .context("failed to query helper process status")?
+        {
+            return Ok(Status(status.code().unwrap_or(1)));
+        }
+        if Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let _ = child.kill();
+    let status = child
+        .wait()
+        .context("failed to wait for helper process after timeout")?;
+    Ok(Status(status.code().unwrap_or(1)))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -442,12 +493,69 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
         .stderr(Stdio::inherit());
 
     let mut child = cmd.spawn().context("failed to start transaction helper")?;
+    let helper_pid = child.id();
     let mut child_stdin = child.stdin.take().context("failed to open helper stdin")?;
     let child_stdout = child
         .stdout
         .take()
         .context("failed to open helper stdout")?;
     let mut reader = BufReader::new(child_stdout);
+
+    let default_signals = &*crate::exec::DEFAULT_SIGNALS;
+    default_signals.store(false, Ordering::Relaxed);
+    struct ResetDefaultSignals<'a>(&'a std::sync::Arc<AtomicBool>);
+    impl Drop for ResetDefaultSignals<'_> {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Relaxed);
+        }
+    }
+    let _reset_default_signals = ResetDefaultSignals(default_signals);
+
+    let interrupted = Arc::new(AtomicBool::new(false));
+    let stop_signal = Arc::new(AtomicBool::new(false));
+    let signal_sent = Arc::new(AtomicBool::new(false));
+    let stop_signal_thread = Arc::clone(&stop_signal);
+    let signal_sent_thread = Arc::clone(&signal_sent);
+    let interrupted_thread = Arc::clone(&interrupted);
+    let signal_thread = std::thread::Builder::new()
+        .name("bah-parent-sig".to_string())
+        .spawn(move || {
+            while !stop_signal_thread.load(Ordering::Relaxed) {
+                if crate::exec::take_caught_signal() != 0 {
+                    if !signal_sent_thread.swap(true, Ordering::Relaxed) {
+                        interrupted_thread.store(true, Ordering::SeqCst);
+                        let _ = std::io::stdout()
+                            .write_all(b"\r\x1b[2K\x1b[1m:: Interrupted. Cleaning up...\x1b[0m\n");
+                        let _ = std::io::stdout().flush();
+                        crate::exec::forward_sigint_to_pid(helper_pid);
+                    }
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        })
+        .ok();
+
+    let (ipc_tx, ipc_rx) = channel::<Result<Option<String>, std::io::Error>>();
+    let ipc_thread = std::thread::Builder::new()
+        .name("bah-helper-ipc".to_string())
+        .spawn(move || loop {
+            match read_ipc_line_bounded(&mut reader) {
+                Ok(Some(line)) => {
+                    if ipc_tx.send(Ok(Some(line))).is_err() {
+                        break;
+                    }
+                }
+                Ok(None) => {
+                    let _ = ipc_tx.send(Ok(None));
+                    break;
+                }
+                Err(err) => {
+                    let _ = ipc_tx.send(Err(err));
+                    break;
+                }
+            }
+        })?;
 
     serde_json::to_writer(&mut child_stdin, plan)
         .context("failed to serialize transaction plan to helper stdin")?;
@@ -462,87 +570,107 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
     let mut ui = TransactionRenderController::new();
 
     loop {
-        let line = match read_ipc_line_bounded(&mut reader).context("read helper IPC line")? {
-            Some(l) => l,
-            None => break,
-        };
-
-        let msg: HelperToParent = match serde_json::from_str(line.trim()) {
-            Ok(v) => v,
-            Err(_) => {
+        match ipc_rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(Ok(Some(line))) => {
+                let msg: HelperToParent = match serde_json::from_str(line.trim()) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                match msg {
+                    HelperToParent::Event { message } => ui.on_static_step(&message),
+                    HelperToParent::DownloadProgress {
+                        package,
+                        downloaded,
+                        total,
+                    } => {
+                        ui.on_download_progress(&package, downloaded, total);
+                    }
+                    HelperToParent::InstallProgress {
+                        package,
+                        percent,
+                        current,
+                        total,
+                    } => {
+                        ui.on_install_progress(&package, percent, current, total);
+                    }
+                    HelperToParent::HookPhaseStart => {
+                        ui.on_hook_phase_start(config);
+                    }
+                    HelperToParent::HookStep {
+                        current,
+                        total,
+                        desc,
+                    } => {
+                        ui.on_hook_step(config, current, total, &desc);
+                    }
+                    HelperToParent::HookPhaseDone => {
+                        ui.on_hook_phase_done(config);
+                    }
+                    HelperToParent::LogLine { level, message } => {
+                        let line = format_log_line_for_parent(config, &level, &message);
+                        ui.on_log_line(&line);
+                    }
+                    HelperToParent::Question {
+                        id,
+                        prompt,
+                        default_yes,
+                    } => {
+                        let yes = ask(config, &prompt, default_yes);
+                        serde_json::to_writer(
+                            &mut child_stdin,
+                            &ParentToHelper::Answer { id, yes },
+                        )
+                        .context("failed to write answer JSON to helper (broken pipe?)")?;
+                        child_stdin
+                            .write_all(b"\n")
+                            .context("failed to write answer newline to helper")?;
+                        child_stdin
+                            .flush()
+                            .context("failed to flush answer to helper")?;
+                    }
+                    HelperToParent::Result { code } => {
+                        ui.finish();
+                        final_code = Some(code);
+                        break;
+                    }
+                    HelperToParent::Error { message } => {
+                        ui.finish();
+                        bail!("helper error: {}", message);
+                    }
+                }
+            }
+            Ok(Ok(None)) => break,
+            Ok(Err(err)) => bail!("read helper IPC line: {}", err),
+            Err(RecvTimeoutError::Timeout) => {
+                if let Some(_) = child.try_wait().context("failed to query helper status")? {
+                    break;
+                }
                 continue;
             }
-        };
-
-        match msg {
-            HelperToParent::Event { message } => ui.on_static_step(&message),
-            HelperToParent::DownloadProgress {
-                package,
-                downloaded,
-                total,
-            } => {
-                ui.on_download_progress(&package, downloaded, total);
-            }
-            HelperToParent::InstallProgress {
-                package,
-                percent,
-                current,
-                total,
-            } => {
-                ui.on_install_progress(&package, percent, current, total);
-            }
-            HelperToParent::HookPhaseStart => {
-                ui.on_hook_phase_start(config);
-            }
-            HelperToParent::HookStep {
-                current,
-                total,
-                desc,
-            } => {
-                ui.on_hook_step(config, current, total, &desc);
-            }
-            HelperToParent::HookPhaseDone => {
-                ui.on_hook_phase_done(config);
-            }
-            HelperToParent::LogLine { level, message } => {
-                let line = format_log_line_for_parent(config, &level, &message);
-                ui.on_log_line(&line);
-            }
-            HelperToParent::Question {
-                id,
-                prompt,
-                default_yes,
-            } => {
-                let yes = ask(config, &prompt, default_yes);
-                serde_json::to_writer(&mut child_stdin, &ParentToHelper::Answer { id, yes })
-                    .context("failed to write answer JSON to helper (broken pipe?)")?;
-                child_stdin
-                    .write_all(b"\n")
-                    .context("failed to write answer newline to helper")?;
-                child_stdin
-                    .flush()
-                    .context("failed to flush answer to helper")?;
-            }
-            HelperToParent::Result { code } => {
-                ui.finish();
-                final_code = Some(code);
-                break;
-            }
-            HelperToParent::Error { message } => {
-                ui.finish();
-                bail!("helper error: {}", message);
-            }
+            Err(RecvTimeoutError::Disconnected) => break,
         }
     }
 
-    let status = child.wait()?;
+    let status = wait_helper_exit(&mut child, Duration::from_secs(2))?;
+    stop_signal.store(true, Ordering::Relaxed);
+    if let Some(thread) = signal_thread {
+        let _ = thread.join();
+    }
+    let _ = ipc_thread.join();
+
     if let Some(code) = final_code {
         return Ok(Status(code));
     }
-    match status.code() {
-        Some(code) => bail!("transaction helper exited before sending a result (status {code})"),
-        None => bail!("transaction helper terminated before sending a result"),
+
+    if interrupted.load(Ordering::SeqCst) {
+        cleanup_pacman_lock(config)?;
+        return Err(InterruptedError.into());
     }
+
+    bail!(
+        "transaction helper terminated before sending a result (status {})",
+        status.code()
+    )
 }
 
 fn format_log_line_for_parent(config: &Config, level: &str, message: &str) -> String {
@@ -555,7 +683,7 @@ fn format_log_line_for_parent(config: &Config, level: &str, message: &str) -> St
     format!("{} {}", prefix, message)
 }
 
-fn ensure_sig_interrupt_thread_started() {
+pub(crate) fn ensure_sig_interrupt_thread_started() {
     if SIG_THREAD_STARTED.swap(true, Ordering::SeqCst) {
         return;
     }
@@ -579,15 +707,23 @@ fn ensure_sig_interrupt_thread_started() {
                     unsafe {
                         let _ = alpm_sys::alpm_trans_interrupt(p);
                     };
+                    continue;
                 }
+                if INTERRUPT_REQUESTED.swap(true, Ordering::SeqCst) {
+                    continue;
+                }
+                let _ = emit(&HelperToParent::Error {
+                    message: "Interrupted. Cleaning up...".to_string(),
+                });
+                std::process::exit(1);
             }
         });
 }
 
-struct ActiveCommitGuard;
+pub(crate) struct ActiveCommitGuard;
 
 impl ActiveCommitGuard {
-    fn arm(alpm: &alpm::Alpm) -> Self {
+    pub(crate) fn arm(alpm: &alpm::Alpm) -> Self {
         ACTIVE_COMMIT_HANDLE.store(alpm.as_alpm_handle_t(), Ordering::Release);
         Self
     }

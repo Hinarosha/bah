@@ -4,6 +4,7 @@ mod legacy_pacman;
 use crate::args::Args;
 use crate::config::Config;
 use crate::exec::Status;
+use crate::tx_helper::InterruptedError;
 
 use anyhow::Result;
 
@@ -64,6 +65,9 @@ pub fn pacman<S: AsRef<str>>(config: &Config, args: &Args<S>) -> Result<Status> 
             match backend.pacman(config, &args) {
                 Ok(status) => Ok(status),
                 Err(err) => {
+                    if err.downcast_ref::<InterruptedError>().is_some() {
+                        return Err(err);
+                    }
                     if allow_fallback() {
                         if backend_fallback_verbose() {
                             eprintln!(
@@ -72,10 +76,7 @@ pub fn pacman<S: AsRef<str>>(config: &Config, args: &Args<S>) -> Result<Status> 
                                 "ALPM backend failed",
                                 err,
                                 args.op,
-                                args.args
-                                    .iter()
-                                    .map(|a| a.to_string())
-                                    .collect::<Vec<_>>(),
+                                args.args.iter().map(|a| a.to_string()).collect::<Vec<_>>(),
                                 args.targets
                             );
                             eprintln!(
@@ -89,8 +90,7 @@ pub fn pacman<S: AsRef<str>>(config: &Config, args: &Args<S>) -> Result<Status> 
                                 config.color.field.paint("::"),
                                 format!(
                                     "alpm: {} → {}",
-                                    err,
-                                    "using pacman (set BAH_BACKEND_DEBUG=1 for details)"
+                                    err, "using pacman (set BAH_BACKEND_DEBUG=1 for details)"
                                 )
                             );
                         }
@@ -108,5 +108,3 @@ pub fn pacman<S: AsRef<str>>(config: &Config, args: &Args<S>) -> Result<Status> 
         }
     }
 }
-
-

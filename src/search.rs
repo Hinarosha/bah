@@ -6,16 +6,16 @@ use crate::util::{input, NumberMenu};
 use crate::{info, printtr};
 
 use ansiterm::Style;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use anyhow::{ensure, Context, Result};
 use flate2::read::GzDecoder;
 use raur::{Raur, SearchBy};
+use regex::escape as regex_escape;
 use regex::RegexBuilder;
 use regex::RegexSet;
-use regex::escape as regex_escape;
 use reqwest::get;
 use srcinfo::Srcinfo;
 use tr::tr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[derive(Debug)]
 pub enum AnyPkg<'a> {
@@ -155,8 +155,16 @@ fn search_row_from_pkgbuild(
 fn compute_search_columns(rows: &[SearchRow], term_w: usize) -> (usize, usize, usize) {
     let gaps = SEARCH_COL_GAP * 2;
     let min_desc = 8usize;
-    let max_l = rows.iter().map(SearchRow::left_plain_width).max().unwrap_or(0);
-    let max_m = rows.iter().map(SearchRow::mid_plain_width).max().unwrap_or(0);
+    let max_l = rows
+        .iter()
+        .map(SearchRow::left_plain_width)
+        .max()
+        .unwrap_or(0);
+    let max_m = rows
+        .iter()
+        .map(SearchRow::mid_plain_width)
+        .max()
+        .unwrap_or(0);
 
     let mut w_l = max_l;
     let mut w_m = max_m;
@@ -359,7 +367,12 @@ fn desc_one_line(s: &str) -> String {
 }
 
 /// Package name (`ss_name`) and optional status (`ss_installed`); never truncated.
-fn format_name_status_cell(c: &Colors, name: &str, status: &str, search_terms: &[String]) -> String {
+fn format_name_status_cell(
+    c: &Colors,
+    name: &str,
+    status: &str,
+    search_terms: &[String],
+) -> String {
     let hi = c.action;
     let color_on = c.enabled;
     if status.is_empty() {
@@ -373,7 +386,12 @@ fn format_name_status_cell(c: &Colors, name: &str, status: &str, search_terms: &
 }
 
 /// Repository then version (`sl_repo` + `ss_ver`); never truncated.
-fn format_repo_version_cell(c: &Colors, repo: &str, version: &str, search_terms: &[String]) -> String {
+fn format_repo_version_cell(
+    c: &Colors,
+    repo: &str,
+    version: &str,
+    search_terms: &[String],
+) -> String {
     let hi = c.action;
     let color_on = c.enabled;
     format!(

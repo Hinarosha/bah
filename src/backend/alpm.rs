@@ -2,7 +2,10 @@ use crate::args::Args;
 use crate::backend::PackageBackend;
 use crate::config::Config;
 use crate::exec::Status;
-use crate::tx_helper::{run_plan_with_helper, TransactionPlan};
+use crate::tx_helper::{
+    ensure_sig_interrupt_thread_started, run_plan_with_helper, ActiveCommitGuard,
+    CommitInterruptDefer, TransactionPlan,
+};
 
 use alpm::{AnyEvent, Event, PackageOperation, Progress, SigLevel, TransFlag};
 use alpm_utils::DbListExt;
@@ -26,7 +29,6 @@ impl PackageBackend for AlpmBackend {
             _ => bail!("ALPM backend currently supports sync/remove/upgrade operations"),
         }
     }
-
 }
 
 impl AlpmBackend {
@@ -63,8 +65,15 @@ impl AlpmBackend {
                 return Ok(Status(0));
             }
 
-            alpm.trans_commit()
-                .map_err(|e| anyhow!("failed to commit ALPM transaction: {}", e))?;
+            ensure_sig_interrupt_thread_started();
+            let commit_err = {
+                let _defer_int = CommitInterruptDefer::new();
+                let _guard = ActiveCommitGuard::arm(&alpm);
+                alpm.trans_commit().err()
+            };
+            if let Some(e) = commit_err {
+                return Err(anyhow!("failed to commit ALPM transaction: {}", e));
+            }
             Ok(Status(0))
         })();
 
@@ -94,8 +103,15 @@ impl AlpmBackend {
                 return Ok(Status(0));
             }
 
-            alpm.trans_commit()
-                .map_err(|e| anyhow!("failed to commit ALPM remove transaction: {}", e))?;
+            ensure_sig_interrupt_thread_started();
+            let commit_err = {
+                let _defer_int = CommitInterruptDefer::new();
+                let _guard = ActiveCommitGuard::arm(&alpm);
+                alpm.trans_commit().err()
+            };
+            if let Some(e) = commit_err {
+                return Err(anyhow!("failed to commit ALPM remove transaction: {}", e));
+            }
             Ok(Status(0))
         })();
 
@@ -118,15 +134,23 @@ impl AlpmBackend {
                     .map_err(|e| anyhow!("failed to add package file '{}': {}", target, e.error))?;
             }
 
-            alpm.trans_prepare()
-                .map_err(|e| anyhow!("failed to prepare ALPM upgrade transaction: {}", e.error()))?;
+            alpm.trans_prepare().map_err(|e| {
+                anyhow!("failed to prepare ALPM upgrade transaction: {}", e.error())
+            })?;
 
             if args.has_arg("p", "print") {
                 return Ok(Status(0));
             }
 
-            alpm.trans_commit()
-                .map_err(|e| anyhow!("failed to commit ALPM upgrade transaction: {}", e))?;
+            ensure_sig_interrupt_thread_started();
+            let commit_err = {
+                let _defer_int = CommitInterruptDefer::new();
+                let _guard = ActiveCommitGuard::arm(&alpm);
+                alpm.trans_commit().err()
+            };
+            if let Some(e) = commit_err {
+                return Err(anyhow!("failed to commit ALPM upgrade transaction: {}", e));
+            }
             Ok(Status(0))
         })();
 
@@ -230,22 +254,19 @@ fn add_target(alpm: &mut alpm::Alpm, target: &str) -> Result<()> {
         let pkg = db
             .pkg(pkgname)
             .with_context(|| format!("target not found in repo '{}': {}", repo, pkgname))?;
-        alpm
-            .trans_add_pkg(pkg)
+        alpm.trans_add_pkg(pkg)
             .map_err(|e| anyhow!("failed to add target '{}': {}", target, e.error))?;
         return Ok(());
     }
 
     if let Ok(pkg) = alpm.syncdbs().pkg(target) {
-        alpm
-            .trans_add_pkg(pkg)
+        alpm.trans_add_pkg(pkg)
             .map_err(|e| anyhow!("failed to add target '{}': {}", target, e.error))?;
         return Ok(());
     }
 
     if let Some(pkg) = alpm.syncdbs().find_target_satisfier(target) {
-        alpm
-            .trans_add_pkg(pkg)
+        alpm.trans_add_pkg(pkg)
             .map_err(|e| anyhow!("failed to add target '{}': {}", target, e.error))?;
         return Ok(());
     }

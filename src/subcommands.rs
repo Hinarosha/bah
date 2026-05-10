@@ -93,7 +93,10 @@ pub fn expand_subcommands(args: Vec<String>) -> Vec<String> {
         "version" => vec!["-V".to_string()],
 
         // Implicit search: all tokens are search terms (parity with `bah -Ss a b`).
-        _ => prepend(&["-S", "-s"], std::iter::once(head).chain(rest.into_iter()).collect()),
+        _ => prepend(
+            &["-S", "-s"],
+            std::iter::once(head).chain(rest.into_iter()).collect(),
+        ),
     }
 }
 
@@ -137,14 +140,14 @@ mod tests {
 
     #[test]
     fn sync_target_uses_s() {
-        assert_eq!(expand_subcommands(vec!["sync".into(), "foo".into()]), vec!["-S", "foo"]);
+        assert_eq!(
+            expand_subcommands(vec!["sync".into(), "foo".into()]),
+            vec!["-S", "foo"]
+        );
     }
 
     #[test]
     fn relative_pkgbuild_untouched() {
-        assert_eq!(
-            expand_subcommands(vec!["./mypkg".into()]),
-            vec!["./mypkg"]
-        );
+        assert_eq!(expand_subcommands(vec!["./mypkg".into()]), vec!["./mypkg"]);
     }
 }

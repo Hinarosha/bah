@@ -181,7 +181,10 @@ pub fn print_repo_info(conf: &Config, pkgs: &[RepoPackageInfo], len: usize) -> R
         print(&tr!("Repository"), &pkg.repository);
         print(&tr!("Name"), &pkg.name);
         print(&tr!("Version"), &pkg.version);
-        print(&tr!("Description"), pkg.description.as_deref().unwrap_or(&tr!("None")));
+        print(
+            &tr!("Description"),
+            pkg.description.as_deref().unwrap_or(&tr!("None")),
+        );
         print("URL", pkg.url.as_deref().unwrap_or(&tr!("None")));
         print_list(&tr!("Groups"), &pkg.groups);
         print_list(&tr!("Licenses"), &pkg.licenses);
@@ -189,7 +192,10 @@ pub fn print_repo_info(conf: &Config, pkgs: &[RepoPackageInfo], len: usize) -> R
         print_list(&tr!("Depends On"), &pkg.depends_on);
         print_list(&tr!("Optional Deps"), &pkg.optional_deps);
         print_list(&tr!("Conflicts With"), &pkg.conflicts_with);
-        print(&tr!("Maintainer"), pkg.maintainer.as_deref().unwrap_or(&tr!("None")));
+        print(
+            &tr!("Maintainer"),
+            pkg.maintainer.as_deref().unwrap_or(&tr!("None")),
+        );
         if let Some(build_date) = &pkg.build_date {
             print(&tr!("Build Date"), build_date);
         }
