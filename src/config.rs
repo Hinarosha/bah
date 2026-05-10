@@ -849,7 +849,10 @@ then initialise it with:
         }
 
         if self.chroot {
-            remove_var("PKGEXT");
+            // Safety: process-local env mutation for chroot configuration.
+            unsafe {
+                remove_var("PKGEXT");
+            }
         }
 
         Ok(())
@@ -1008,7 +1011,10 @@ then initialise it with:
         );
 
         self.env.push((key.to_owned(), value.to_string()));
-        set_var(key, value);
+        // Safety: process-local env mutation to mirror config env entries.
+        unsafe {
+            set_var(key, value);
+        }
         Ok(())
     }
 

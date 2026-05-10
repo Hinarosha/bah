@@ -21,10 +21,13 @@ use unicode_width::UnicodeWidthStr;
 const COL_GAP: &str = "  ";
 const ANSI_CLEAR_LINE: &str = "\r\x1b[2K";
 const ANSI_BOLD: &str = "\x1b[1m";
+const ANSI_CYAN: &str = "\x1b[36m";
+const ANSI_YELLOW: &str = "\x1b[33m";
+const ANSI_GREY: &str = "\x1b[90m";
 const ANSI_BOLD_BLUE: &str = "\x1b[1;34m";
 const ANSI_GREEN: &str = "\x1b[32m";
 const ANSI_RESET: &str = "\x1b[0m";
-const PROGRESS_BAR_WIDTH: usize = 30;
+const PROGRESS_BAR_WIDTH: usize = 52;
 
 /// PACMAN-like verb shown in the confirmation grid (system colors via [`Config`](crate::config::Config)).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -800,11 +803,25 @@ fn ansi_ok() -> String {
 
 fn format_speed(bytes_per_sec: f64) -> String {
     if bytes_per_sec >= 1_000_000.0 {
-        format!("{:.1} MB/s", bytes_per_sec / 1_000_000.0)
+        format!("{:.1}MB/s", bytes_per_sec / 1_000_000.0)
     } else if bytes_per_sec >= 1_000.0 {
-        format!("{:.1} KB/s", bytes_per_sec / 1_000.0)
+        format!("{:.1}KB/s", bytes_per_sec / 1_000.0)
     } else {
-        format!("{:.0} B/s", bytes_per_sec.max(0.0))
+        format!("{:.0}B/s", bytes_per_sec.max(0.0))
+    }
+}
+
+fn format_time_remaining(bytes_remaining: u64, speed: f64) -> String {
+    if speed <= 0.0 {
+        return "--".to_string();
+    }
+    let secs = (bytes_remaining as f64 / speed).ceil() as u64;
+    if secs < 60 {
+        format!("{}s", secs)
+    } else {
+        let mins = secs / 60;
+        let secs = secs % 60;
+        format!("{}m{}s", mins, secs)
     }
 }
 
@@ -826,22 +843,19 @@ fn visible_width(s: &str) -> usize {
     plain.as_str().width()
 }
 
-fn progress_bar_with_width(percent: u64, width: usize) -> String {
+fn render_progress_bar(percent: u64, width: usize) -> String {
     let width = width.clamp(1, PROGRESS_BAR_WIDTH);
     let pct = percent.min(100) as usize;
     if pct >= 100 {
-        return format!("[{}]", "=".repeat(width));
+        let body = "=".repeat(width);
+        return format!("[{ANSI_BOLD_BLUE}{body}{ANSI_RESET}]");
     }
     let pos = ((pct * width) / 100).min(width.saturating_sub(1));
-    let mut body = String::with_capacity(width);
-    body.push_str(&"=".repeat(pos));
-    body.push('➔');
-    body.push_str(&"-".repeat(width.saturating_sub(pos + 1)));
-    format!("[{body}]")
-}
-
-fn progress_bar(percent: u64) -> String {
-    progress_bar_with_width(percent, PROGRESS_BAR_WIDTH)
+    let filled = "=".repeat(pos);
+    let empty = "-".repeat(width.saturating_sub(pos + 1));
+    format!(
+        "[{ANSI_BOLD_BLUE}{filled}➔{ANSI_GREY}{empty}{ANSI_RESET}]"
+    )
 }
 
 fn split_download_filename(filename: &str) -> (String, String) {
@@ -868,46 +882,21 @@ fn download_percent(downloaded: u64, total: u64) -> u64 {
     .min(100)
 }
 
-fn right_align_bar(left: &str, percent: u64, terminal_width: usize) -> Option<String> {
-    let bar = progress_bar(percent);
+fn right_align_bar(left: &str, right: &str, terminal_width: usize) -> Option<String> {
     let left_width = visible_width(left);
-    let bar_width = visible_width(&bar);
-    if terminal_width < left_width + 1 + bar_width {
+    let right_width = visible_width(right);
+    if terminal_width < left_width + 1 + right_width {
         return None;
     }
-    let padding = terminal_width.saturating_sub(left_width + bar_width);
-    Some(format!("{left}{}{bar}", " ".repeat(padding)))
+    let padding = terminal_width.saturating_sub(left_width + right_width);
+    Some(format!("{left}{}{right}", " ".repeat(padding)))
 }
 
-fn compact_download_line(
-    name: &str,
-    remaining: &str,
-    speed: &str,
-    percent: u64,
-    terminal_width: usize,
-) -> String {
-    let pct = percent.min(100);
-    let mut name_width = name.width().min(18).max(1);
-    loop {
-        let display_name = truncate_to_width(name, name_width);
-        let left =
-            format!("{ANSI_BOLD}{display_name}{ANSI_RESET}... [{remaining} left] {speed} {pct}%");
-        let left_width = visible_width(&left);
-        if terminal_width > left_width + 3 {
-            let bar_width = terminal_width
-                .saturating_sub(left_width + 1 + 2)
-                .min(PROGRESS_BAR_WIDTH)
-                .max(1);
-            let bar = progress_bar_with_width(pct, bar_width);
-            let padding = terminal_width.saturating_sub(left_width + visible_width(&bar));
-            return format!("{left}{}{bar}", " ".repeat(padding));
-        }
-        if name_width <= 1 {
-            let bar = progress_bar_with_width(pct, 1);
-            return format!("{left} {bar}");
-        }
-        name_width -= 1;
+fn truncate_filename_to_width(filename: &str, max_width: usize) -> String {
+    if visible_width(filename) <= max_width {
+        return filename.to_string();
     }
+    truncate_to_width(filename, max_width)
 }
 
 fn render_download_line(
@@ -919,28 +908,64 @@ fn render_download_line(
 ) -> String {
     let (name, file) = split_download_filename(filename);
     let percent = download_percent(downloaded, total);
-    let left = total.saturating_sub(downloaded);
-    let remaining = format_bytes_u64(left);
+    let remaining_bytes = total.saturating_sub(downloaded);
+    let remaining = format_bytes_u64(remaining_bytes);
+    let time = format_time_remaining(remaining_bytes, speed);
     let speed = format_speed(speed);
-    let full_left = format!(
-        "Downloading {ANSI_BOLD}{name}{ANSI_RESET}... ({file}) [{remaining} left] {speed} {:>3}%",
-        percent
+
+    let left_part = format!(
+        "{ANSI_CYAN}Downloading{ANSI_RESET} {ANSI_BOLD}{name}{ANSI_RESET}..."
     );
-    if let Some(line) = right_align_bar(&full_left, percent, terminal_width.max(1)) {
+    let mut file_part = format!("({file})");
+    let percent_part = format!("{ANSI_BOLD}{percent}%{ANSI_RESET}");
+    let right_base = format!(
+        " {ANSI_YELLOW}[{remaining} left]{ANSI_RESET} {ANSI_YELLOW}{time}{ANSI_RESET} {ANSI_GREEN}{speed}{ANSI_RESET} {percent_part}",
+    );
+
+    let mut bar_width = PROGRESS_BAR_WIDTH;
+    let mut right_part = format!(
+        "{file_part}{right_base} {}",
+        render_progress_bar(percent, bar_width)
+    );
+    while visible_width(&format!("{left_part}{right_part}")) > terminal_width {
+        if bar_width > 20 {
+            bar_width -= 1;
+        } else {
+            let fixed_width = visible_width(&format!(
+                "{right_base} {}",
+                render_progress_bar(percent, bar_width)
+            ));
+            let available_file = terminal_width.saturating_sub(visible_width(&left_part) + fixed_width + 1);
+            if available_file == 0 {
+                return format!("{} {}", left_part, render_progress_bar(percent, bar_width));
+            }
+            file_part = format!("({})", truncate_filename_to_width(&file, available_file.saturating_sub(2)));
+            right_part = format!(
+                "{file_part}{right_base} {}",
+                render_progress_bar(percent, bar_width)
+            );
+            break;
+        }
+        right_part = format!(
+            "{file_part}{right_base} {}",
+            render_progress_bar(percent, bar_width)
+        );
+    }
+
+    if let Some(line) = right_align_bar(&left_part, &right_part, terminal_width.max(1)) {
         return line;
     }
-    compact_download_line(&name, &remaining, &speed, percent, terminal_width.max(1))
+
+    format!("{} {}", left_part, render_progress_bar(percent, bar_width))
 }
 
 fn render_install_line(package: &str, percent: u64, current: usize, total: usize) -> String {
     let percent = percent.min(100);
-    let left = format!("Installing {package} ({current}/{total}) {:>3}%", percent);
-    right_align_bar(&left, percent, get_terminal_width().unwrap_or(120).max(1)).unwrap_or_else(
-        || {
-            let bar = progress_bar_with_width(percent, 12);
-            format!("{left} {bar}")
-        },
-    )
+    let left = format!("Installing {package} ({current}/{total}) {percent}%");
+    let bar = render_progress_bar(percent, 12);
+    right_align_bar(&left, &bar, get_terminal_width().unwrap_or(120).max(1)).unwrap_or_else(|| {
+        format!("{left} {bar}")
+    })
 }
 
 fn clear_progress_line() {

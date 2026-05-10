@@ -1,8 +1,8 @@
 [package]
 name = "bah"
-version = "2.4.1"
+version = "2.5.2"
 authors = ["hinarosha <hinarosha@proton.me>"]
-edition = "2021"
+edition = "2024"
 
 description = "Beautiful AUR Helper"
 homepage = "https://github.com/Hinarosha/bah"

@@ -36,6 +36,14 @@ static CAUGHT_SIGNAL: LazyLock<Arc<AtomicUsize>> = LazyLock::new(|| {
     arc
 });
 
+pub static INTERRUPTED: LazyLock<Arc<AtomicBool>> = LazyLock::new(|| {
+    let arc = Arc::new(AtomicBool::new(false));
+    signal_flag::register(SIGTERM, Arc::clone(&arc)).unwrap();
+    signal_flag::register(SIGINT, Arc::clone(&arc)).unwrap();
+    signal_flag::register(SIGQUIT, Arc::clone(&arc)).unwrap();
+    arc
+});
+
 pub static RAISE_SIGPIPE: LazyLock<Arc<AtomicBool>> = LazyLock::new(|| {
     let arc = Arc::new(AtomicBool::new(true));
     signal_flag::register_conditional_default(SIGPIPE, Arc::clone(&arc)).unwrap();
@@ -136,7 +144,11 @@ pub fn spawn(cmd: &mut Command) -> Result<Child> {
 }
 
 pub fn take_caught_signal() -> usize {
-    (*CAUGHT_SIGNAL).swap(0, Ordering::Relaxed)
+    (*CAUGHT_SIGNAL).swap(0, Ordering::SeqCst)
+}
+
+pub fn interrupt_received() -> bool {
+    (*INTERRUPTED).load(Ordering::SeqCst)
 }
 
 #[cfg(unix)]

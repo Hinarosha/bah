@@ -62,18 +62,26 @@ fn sanitize_helper_environment() {
     let keys: Vec<String> = std::env::vars().map(|(k, _)| k).collect();
     for k in keys {
         if k.starts_with("LD_") || k.starts_with("DYLD_") {
-            std::env::remove_var(&k);
+            // Safety: process-local env sanitization for helper subprocess.
+            unsafe {
+                std::env::remove_var(&k);
+            }
             continue;
         }
         match k.as_str() {
-            "PERL5LIB" | "PYTHONPATH" | "RUBYLIB" | "NODE_PATH" => std::env::remove_var(&k),
+            "PERL5LIB" | "PYTHONPATH" | "RUBYLIB" | "NODE_PATH" => unsafe {
+                std::env::remove_var(&k);
+            },
             _ => {}
         }
     }
-    std::env::set_var(
-        "PATH",
-        "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-    );
+    // Safety: process-local env sanitization for helper subprocess.
+    unsafe {
+        std::env::set_var(
+            "PATH",
+            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        );
+    }
 }
 
 /// Reads until `\n` or EOF without buffering more than `max_body_bytes` (excluding the delimiter).
@@ -512,6 +520,23 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
     let _reset_default_signals = ResetDefaultSignals(default_signals);
 
     let interrupted = Arc::new(AtomicBool::new(false));
+    struct InterruptCleanupGuard<'a> {
+        config: &'a Config,
+        interrupted: Arc<AtomicBool>,
+    }
+
+    impl Drop for InterruptCleanupGuard<'_> {
+        fn drop(&mut self) {
+            if self.interrupted.load(Ordering::SeqCst) || crate::exec::interrupt_received() {
+                let _ = cleanup_pacman_lock(self.config);
+            }
+        }
+    }
+
+    let _cleanup_guard = InterruptCleanupGuard {
+        config,
+        interrupted: Arc::clone(&interrupted),
+    };
     let stop_signal = Arc::new(AtomicBool::new(false));
     let signal_sent = Arc::new(AtomicBool::new(false));
     let stop_signal_thread = Arc::clone(&stop_signal);
@@ -662,7 +687,7 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
         return Ok(Status(code));
     }
 
-    if interrupted.load(Ordering::SeqCst) {
+    if interrupted.load(Ordering::SeqCst) || crate::exec::interrupt_received() {
         cleanup_pacman_lock(config)?;
         return Err(InterruptedError.into());
     }

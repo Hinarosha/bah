@@ -135,6 +135,7 @@ pub async fn run<S: AsRef<str>>(args: &[S]) -> i32 {
 
     let _ = &*exec::DEFAULT_SIGNALS;
     let _ = &*exec::RAISE_SIGPIPE;
+    let _ = &*exec::INTERRUPTED;
 
     let mut config = match Config::new() {
         Ok(config) => config,
