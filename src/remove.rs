@@ -1,10 +1,11 @@
-use crate::devel::{load_devel_info, save_devel_info};
 use crate::backend;
+use crate::devel::{load_devel_info, save_devel_info};
 use crate::print_error;
+use crate::repo;
 use crate::search::interactive_search_local;
+use crate::ui::{confirm_transaction, remove_confirmation_bundle, TxConfirmOp};
 use crate::util::pkg_base_or_name;
 use crate::Config;
-use crate::repo;
 
 use std::collections::HashMap;
 
@@ -34,6 +35,12 @@ pub fn remove(config: &mut Config) -> Result<i32> {
                     .or_default()
                     .push(pkg.name().to_string());
             }
+        }
+    }
+
+    if let Some((table, totals)) = remove_confirmation_bundle(config, &config.targets) {
+        if !confirm_transaction(config, &table, &totals, TxConfirmOp::Remove) {
+            return Ok(1);
         }
     }
 

@@ -1,14 +1,16 @@
 use crate::config::{Colors, Config};
 use crate::exec::Status;
 use crate::fmt::truncate_to_width;
+use crate::ui::TransactionRenderController;
 use crate::util::ask;
 
 use alpm::{
-    AnyEvent, AnyQuestion, CommitError, Error as AlpmError, Event, HookWhen, LogLevel, Progress,
-    SigLevel, TransFlag,
+    AnyDownloadEvent, AnyEvent, AnyQuestion, CommitError, DownloadEvent, DownloadResult,
+    Error as AlpmError, Event, HookWhen, LogLevel, PackageOperation, Progress, SigLevel,
+    TransFlag,
 };
-use alpm_utils::DbListExt;
 use alpm_sys::alpm_handle_t;
+use alpm_utils::DbListExt;
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::Local;
 #[cfg(target_os = "linux")]
@@ -19,9 +21,9 @@ use nix::sys::stat::{fchmod, Mode};
 use nix::sys::statfs::fstatfs;
 #[cfg(target_os = "linux")]
 use nix::sys::statvfs::{fstatvfs, FsFlags};
+use nix::unistd::{dup, dup2_stdout, Uid};
 #[cfg(target_os = "linux")]
 use nix::unistd::{faccessat, AccessFlags};
-use nix::unistd::{dup, dup2_stdout, Uid};
 use serde::{Deserialize, Serialize};
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
@@ -31,6 +33,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 const MAX_PLAN_BYTES: usize = 128 * 1024;
 const MAX_TARGETS: usize = 4096;
@@ -142,13 +145,7 @@ fn bah_audit_log(msg: &str) {
         ) {
             let _ = fchmod(&fd, Mode::from_bits_truncate(0o600));
             let mut f = File::from(fd);
-            let _ = writeln!(
-                f,
-                "[{}] [bah-helper:{}] {}",
-                ts,
-                std::process::id(),
-                msg
-            );
+            let _ = writeln!(f, "[{}] [bah-helper:{}] {}", ts, std::process::id(), msg);
         }
     }
     #[cfg(not(target_os = "linux"))]
@@ -270,9 +267,24 @@ pub enum HelperToParent {
     Event {
         message: String,
     },
-    Progress {
-        message: String,
+    DownloadProgress {
+        package: String,
+        downloaded: u64,
+        total: u64,
     },
+    InstallProgress {
+        package: String,
+        percent: u64,
+        current: usize,
+        total: usize,
+    },
+    HookPhaseStart,
+    HookStep {
+        current: usize,
+        total: usize,
+        desc: String,
+    },
+    HookPhaseDone,
     LogLine {
         level: String,
         message: String,
@@ -302,11 +314,20 @@ struct QuestionIpcState {
     next_id: u64,
 }
 
+struct HelperDlThrottle {
+    last_emit: std::collections::HashMap<String, Instant>,
+}
+
+struct HelperInstallThrottle {
+    last_emit: std::collections::HashMap<String, Instant>,
+}
+
 /// Makes JSON IPC lines go to the duplicated pipe fd; hooks and children inherit fd 1 as a copy of stderr (terminal), not the pipe.
 fn install_ipc_json_sink() -> Result<()> {
     use std::io::{stderr, stdout};
     let ipc_fd = dup(stdout()).context("dup helper stdout for JSON IPC")?;
-    dup2_stdout(stderr()).context("dup2 stderr onto stdout so hook children do not corrupt JSON")?;
+    dup2_stdout(stderr())
+        .context("dup2 stderr onto stdout so hook children do not corrupt JSON")?;
     let file = File::from(ipc_fd);
     let mut guard = HELPER_JSON_OUT
         .lock()
@@ -325,13 +346,13 @@ pub fn run_helper_transaction(config: &Config) -> Result<i32> {
 
     let stdin = std::io::stdin();
     let mut locked = stdin.lock();
-    let buf =
-        read_until_newline_limited(&mut locked, MAX_PLAN_BYTES).context("helper transaction plan")?;
+    let buf = read_until_newline_limited(&mut locked, MAX_PLAN_BYTES)
+        .context("helper transaction plan")?;
     if buf.is_empty() {
         bail!("helper transaction plan is empty");
     }
-    let plan: TransactionPlan = serde_json::from_slice(&buf)
-        .context("failed to parse helper transaction plan JSON")?;
+    let plan: TransactionPlan =
+        serde_json::from_slice(&buf).context("failed to parse helper transaction plan JSON")?;
     validate_plan(&plan)?;
 
     install_ipc_json_sink().context("failed to set up helper JSON IPC channel")?;
@@ -385,7 +406,9 @@ fn validate_plan(plan: &TransactionPlan) -> Result<()> {
             }
             Ok(())
         }
-        TransactionPlan::SetInstallReason { reason, packages, .. } => {
+        TransactionPlan::SetInstallReason {
+            reason, packages, ..
+        } => {
             if reason != "asdeps" && reason != "asexplicit" {
                 bail!("unsupported install reason '{}'", reason);
             }
@@ -420,7 +443,10 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
 
     let mut child = cmd.spawn().context("failed to start transaction helper")?;
     let mut child_stdin = child.stdin.take().context("failed to open helper stdin")?;
-    let child_stdout = child.stdout.take().context("failed to open helper stdout")?;
+    let child_stdout = child
+        .stdout
+        .take()
+        .context("failed to open helper stdout")?;
     let mut reader = BufReader::new(child_stdout);
 
     serde_json::to_writer(&mut child_stdin, plan)
@@ -433,6 +459,7 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
         .context("failed to flush transaction plan to helper")?;
 
     let mut final_code: Option<i32> = None;
+    let mut ui = TransactionRenderController::new();
 
     loop {
         let line = match read_ipc_line_bounded(&mut reader).context("read helper IPC line")? {
@@ -448,10 +475,38 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
         };
 
         match msg {
-            HelperToParent::Event { message } => println!("{}", message),
-            HelperToParent::Progress { message } => println!("{}", message),
+            HelperToParent::Event { message } => ui.on_static_step(&message),
+            HelperToParent::DownloadProgress {
+                package,
+                downloaded,
+                total,
+            } => {
+                ui.on_download_progress(&package, downloaded, total);
+            }
+            HelperToParent::InstallProgress {
+                package,
+                percent,
+                current,
+                total,
+            } => {
+                ui.on_install_progress(&package, percent, current, total);
+            }
+            HelperToParent::HookPhaseStart => {
+                ui.on_hook_phase_start(config);
+            }
+            HelperToParent::HookStep {
+                current,
+                total,
+                desc,
+            } => {
+                ui.on_hook_step(config, current, total, &desc);
+            }
+            HelperToParent::HookPhaseDone => {
+                ui.on_hook_phase_done(config);
+            }
             HelperToParent::LogLine { level, message } => {
-                print_log_line_for_parent(config, &level, &message);
+                let line = format_log_line_for_parent(config, &level, &message);
+                ui.on_log_line(&line);
             }
             HelperToParent::Question {
                 id,
@@ -469,29 +524,35 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
                     .context("failed to flush answer to helper")?;
             }
             HelperToParent::Result { code } => {
+                ui.finish();
                 final_code = Some(code);
                 break;
             }
             HelperToParent::Error { message } => {
+                ui.finish();
                 bail!("helper error: {}", message);
             }
         }
     }
 
     let status = child.wait()?;
-    // `status.code()` is None when the child was terminated by signal; use a non‑zero sentinel.
-    let code = final_code.unwrap_or_else(|| status.code().unwrap_or(101));
-    Ok(Status(code))
+    if let Some(code) = final_code {
+        return Ok(Status(code));
+    }
+    match status.code() {
+        Some(code) => bail!("transaction helper exited before sending a result (status {code})"),
+        None => bail!("transaction helper terminated before sending a result"),
+    }
 }
 
-fn print_log_line_for_parent(config: &Config, level: &str, message: &str) {
+fn format_log_line_for_parent(config: &Config, level: &str, message: &str) -> String {
     let c = &config.color;
     let prefix = match level {
         "error" => c.error.paint("[X]"),
         "warning" => c.warning.paint("[!]"),
         _ => c.field.paint("[·]"),
     };
-    println!("{} {}", prefix, message);
+    format!("{} {}", prefix, message)
 }
 
 fn ensure_sig_interrupt_thread_started() {
@@ -514,9 +575,7 @@ fn ensure_sig_interrupt_thread_started() {
                 }
                 let p = ACTIVE_COMMIT_HANDLE.load(Ordering::Acquire);
                 if !p.is_null() {
-                    bah_audit_log(&format!(
-                        "signal {sig}: requesting alpm_trans_interrupt"
-                    ));
+                    bah_audit_log(&format!("signal {sig}: requesting alpm_trans_interrupt"));
                     unsafe {
                         let _ = alpm_sys::alpm_trans_interrupt(p);
                     };
@@ -544,9 +603,7 @@ fn map_commit_error(e: CommitError, ctx: &str) -> anyhow::Error {
     let code = e.error();
     let mut s = format!("{}: {}", ctx, e);
     if code == AlpmError::TransHookFailed {
-        s.push_str(
-            " (transaction hook failed; see LogLine / ALPM log messages streamed above)",
-        );
+        s.push_str(" (transaction hook failed; see LogLine / ALPM log messages streamed above)");
     } else if code == AlpmError::TransAbort {
         s.push_str(" (transaction aborted, often due to Ctrl+C)");
     }
@@ -633,7 +690,9 @@ fn pkg_requires_writable_boot(name: &str) -> bool {
 }
 
 fn transaction_touches_boot_sensitive_pkg(alpm: &alpm::Alpm) -> bool {
-    alpm.trans_add().iter().any(|p| pkg_requires_writable_boot(p.name()))
+    alpm.trans_add()
+        .iter()
+        .any(|p| pkg_requires_writable_boot(p.name()))
         || alpm
             .trans_remove()
             .iter()
@@ -735,13 +794,7 @@ fn ensure_boot_rw_for_transaction(alpm: &alpm::Alpm) -> Result<()> {
     }
 
     // Writable bit via dirfd: same inode we just inspected (no path re-resolution between check and statfs).
-    faccessat(
-        &boot_fd,
-        ".",
-        AccessFlags::W_OK,
-        AtFlags::AT_EACCESS,
-    )
-    .with_context(|| {
+    faccessat(&boot_fd, ".", AccessFlags::W_OK, AtFlags::AT_EACCESS).with_context(|| {
         bah_audit_log(&format!(
             "ensure_boot_rw: FAIL faccessat(W_OK) on {}",
             boot.display()
@@ -757,7 +810,8 @@ fn ensure_boot_rw_for_transaction(alpm: &alpm::Alpm) -> Result<()> {
     ));
 
     // Cheap guard before hooks run: ALPM may also check space when CheckSpace is enabled in pacman.conf.
-    let vfs = fstatvfs(&boot_fd).with_context(|| format!("fstatvfs on {} failed", boot.display()))?;
+    let vfs =
+        fstatvfs(&boot_fd).with_context(|| format!("fstatvfs on {} failed", boot.display()))?;
     let fr = vfs.fragment_size() as u64;
     let avail = vfs.blocks_available() as u64;
     let avail_bytes = avail.saturating_mul(fr);
@@ -778,10 +832,7 @@ fn ensure_boot_rw_for_transaction(alpm: &alpm::Alpm) -> Result<()> {
         );
     }
 
-    bah_audit_log(&format!(
-        "ensure_boot_rw: OK {}",
-        boot.display()
-    ));
+    bah_audit_log(&format!("ensure_boot_rw: OK {}", boot.display()));
     Ok(())
 }
 
@@ -790,28 +841,87 @@ fn ensure_boot_rw_for_transaction(_alpm: &alpm::Alpm) -> Result<()> {
     Ok(())
 }
 
-fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
-    let mut alpm = config.new_alpm()?;
+fn fresh_helper_alpm(config: &Config, no_confirm: bool) -> Result<alpm::Alpm> {
+    let alpm = config.new_alpm()?;
     // Route ALPM textual log (hooks, scriptlets detail) through JSON LogLine instead of stderr only.
     alpm.set_log_cb((), helper_log_cb);
     alpm.set_event_cb(config.color, helper_event_cb);
-    alpm.set_progress_cb(config.color, helper_progress_cb);
+    alpm.set_progress_cb(
+        HelperInstallThrottle {
+            last_emit: std::collections::HashMap::new(),
+        },
+        helper_progress_cb,
+    );
+    alpm.set_dl_cb(
+        HelperDlThrottle {
+            last_emit: std::collections::HashMap::new(),
+        },
+        helper_download_cb,
+    );
+    alpm.set_question_cb(
+        QuestionIpcState {
+            no_confirm,
+            next_id: 1,
+        },
+        helper_question_cb,
+    );
+    Ok(alpm)
+}
 
+fn recover_from_stale_lock(
+    mut old: alpm::Alpm,
+    config: &Config,
+    no_confirm: bool,
+    next_id: &mut u64,
+) -> Result<alpm::Alpm> {
+    eprintln!("[DEBUG lock] stale lock recovery entered");
+
+    let lock = confirm_stale_db_lock_removal(no_confirm, next_id)?;
+    eprintln!("[DEBUG lock] user confirmed stale lock removal");
+
+    eprintln!("[DEBUG lock] clearing active commit handle");
+    ACTIVE_COMMIT_HANDLE.store(std::ptr::null_mut(), Ordering::SeqCst);
+
+    eprintln!("[DEBUG lock] releasing old transaction state if any");
+    let _ = old.trans_release();
+
+    eprintln!("[DEBUG lock] dropping old alpm handle");
+    drop(old);
+
+    eprintln!("[DEBUG lock] removing {}", lock.display());
+    match remove_file(&lock) {
+        Ok(()) => {}
+        Err(e) if e.kind() == ErrorKind::NotFound => {}
+        Err(e) => return Err(e).context("failed to remove stale pacman lock"),
+    }
+    emit(&HelperToParent::Event {
+        message: "Removed stale /var/lib/pacman/db.lck lock; retrying transaction.".to_string(),
+    })?;
+
+    eprintln!("[DEBUG lock] sleeping before retry");
+    std::thread::sleep(Duration::from_millis(50));
+
+    eprintln!("[DEBUG lock] creating fresh alpm handle");
+    let fresh = fresh_helper_alpm(config, no_confirm)?;
+
+    eprintln!("[DEBUG lock] fresh alpm handle ready");
+    Ok(fresh)
+}
+
+fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
     let no_confirm = match plan {
         TransactionPlan::Sync { no_confirm, .. }
         | TransactionPlan::Remove { no_confirm, .. }
         | TransactionPlan::Upgrade { no_confirm, .. }
         | TransactionPlan::SetInstallReason { no_confirm, .. } => *no_confirm,
     };
-    let qstate = QuestionIpcState {
-        no_confirm,
-        next_id: 1,
-    };
-    alpm.set_question_cb(qstate, helper_question_cb);
+    let mut alpm = fresh_helper_alpm(config, no_confirm)?;
     let mut helper_qid = 10_000u64;
 
     match plan {
-        TransactionPlan::SetInstallReason { reason, packages, .. } => {
+        TransactionPlan::SetInstallReason {
+            reason, packages, ..
+        } => {
             let pkg_reason = match reason.as_str() {
                 "asdeps" => alpm::PackageReason::Depend,
                 "asexplicit" => alpm::PackageReason::Explicit,
@@ -842,7 +952,7 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                 match alpm.syncdbs_mut().update(*refresh_count > 1) {
                     Ok(_) => (),
                     Err(AlpmError::HandleLock) => {
-                        handle_db_lock(no_confirm, &mut helper_qid)?;
+                        alpm = recover_from_stale_lock(alpm, config, no_confirm, &mut helper_qid)?;
                         alpm.syncdbs_mut().update(*refresh_count > 1)?;
                     }
                     Err(e) => return Err(e.into()),
@@ -875,7 +985,7 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
             match alpm.trans_init(flags) {
                 Ok(_) => (),
                 Err(AlpmError::HandleLock) => {
-                    handle_db_lock(no_confirm, &mut helper_qid)?;
+                    alpm = recover_from_stale_lock(alpm, config, no_confirm, &mut helper_qid)?;
                     alpm.trans_init(flags)?;
                 }
                 Err(e) => return Err(e.into()),
@@ -917,7 +1027,9 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                 if let Some(e) = commit_err {
                     let _ = alpm.trans_release();
                     let _ = alpm.unlock();
-                    return Err(map_commit_error(e, "failed to commit ALPM sync transaction").into());
+                    return Err(
+                        map_commit_error(e, "failed to commit ALPM sync transaction").into(),
+                    );
                 }
             }
             let _ = alpm.trans_release();
@@ -964,7 +1076,7 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
             match alpm.trans_init(flags) {
                 Ok(_) => (),
                 Err(AlpmError::HandleLock) => {
-                    handle_db_lock(no_confirm, &mut helper_qid)?;
+                    alpm = recover_from_stale_lock(alpm, config, no_confirm, &mut helper_qid)?;
                     alpm.trans_init(flags)?;
                 }
                 Err(e) => return Err(e.into()),
@@ -1041,7 +1153,7 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
             match alpm.trans_init(flags) {
                 Ok(_) => (),
                 Err(AlpmError::HandleLock) => {
-                    handle_db_lock(no_confirm, &mut helper_qid)?;
+                    alpm = recover_from_stale_lock(alpm, config, no_confirm, &mut helper_qid)?;
                     alpm.trans_init(flags)?;
                 }
                 Err(e) => return Err(e.into()),
@@ -1091,13 +1203,61 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
     }
 }
 
-fn handle_db_lock(no_confirm: bool, next_id: &mut u64) -> Result<()> {
-    let lock = Path::new("/var/lib/pacman/db.lck");
+fn helper_download_cb(filename: &str, event: AnyDownloadEvent, state: &mut HelperDlThrottle) {
+    if filename.ends_with(".sig") {
+        return;
+    }
+    match event.event() {
+        DownloadEvent::Progress(p) => {
+            let now = Instant::now();
+            let key = filename.to_string();
+            let downloaded = p.downloaded.max(0) as u64;
+            let total = p.total.max(0) as u64;
+            if total == 0 {
+                return;
+            }
+            let should_emit = match state.last_emit.get(&key) {
+                None => true,
+                Some(last) => now.saturating_duration_since(*last) >= Duration::from_millis(100),
+            } || downloaded >= total;
+            if should_emit {
+                state.last_emit.insert(key.clone(), now);
+                let _ = emit(&HelperToParent::DownloadProgress {
+                    package: key,
+                    downloaded,
+                    total,
+                });
+            }
+        }
+        DownloadEvent::Completed(c) => {
+            let total = c.total.max(0) as u64;
+            if c.result == DownloadResult::Failed {
+                let _ = emit(&HelperToParent::LogLine {
+                    level: "warning".to_string(),
+                    message: format!("download failed for {}", filename),
+                });
+            } else if total > 0 {
+                let _ = emit(&HelperToParent::DownloadProgress {
+                    package: filename.to_string(),
+                    downloaded: total,
+                    total,
+                });
+            }
+            state.last_emit.remove(filename);
+        }
+        _ => {}
+    }
+}
+
+fn confirm_stale_db_lock_removal(no_confirm: bool, next_id: &mut u64) -> Result<PathBuf> {
+    let lock = PathBuf::from("/var/lib/pacman/db.lck");
     if !lock.exists() {
-        return Ok(());
+        return Ok(lock);
     }
 
-    let pid = read_to_string(lock).ok().and_then(|s| s.trim().parse::<i32>().ok());
+    let pid = read_to_string(&lock)
+        .ok()
+        .and_then(|s| s.trim().parse::<i32>().ok());
     if let Some(pid) = pid {
         if process_alive(pid) {
             bail!(
@@ -1108,18 +1268,18 @@ fn handle_db_lock(no_confirm: bool, next_id: &mut u64) -> Result<()> {
     }
 
     let prompt = match pid {
-        Some(pid) => format!("Stale pacman lock detected (PID {}). Remove it and retry?", pid),
+        Some(pid) => format!(
+            "Stale pacman lock detected (PID {}). Remove it and retry?",
+            pid
+        ),
         None => "Stale pacman lock detected. Remove it and retry?".to_string(),
     };
     let yes = ask_helper_question(no_confirm, next_id, &prompt, false)?;
     if !yes {
         bail!("database lock present and removal was declined");
     }
-    remove_file(lock).context("failed to remove stale pacman lock")?;
-    emit(&HelperToParent::Event {
-        message: "Removed stale /var/lib/pacman/db.lck lock; retrying transaction.".to_string(),
-    })?;
-    Ok(())
+
+    Ok(lock)
 }
 
 fn process_alive(pid: i32) -> bool {
@@ -1159,13 +1319,6 @@ fn emit(msg: &HelperToParent) -> Result<()> {
     Ok(())
 }
 
-fn hook_when_label(w: HookWhen) -> &'static str {
-    match w {
-        HookWhen::PreTransaction => "pre-transaction",
-        HookWhen::PostTransaction => "post-transaction",
-    }
-}
-
 fn helper_event_cb(event: AnyEvent, c: &mut Colors) {
     use Event::*;
     let message_opt: Option<String> = match event.event() {
@@ -1179,67 +1332,74 @@ fn helper_event_cb(event: AnyEvent, c: &mut Colors) {
             }
             None
         }
-        HookRunDone(_) => None,
+        HookRunDone(h) => {
+            let _ = emit(&HelperToParent::HookStep {
+                current: h.position(),
+                total: h.total(),
+                desc: h.desc().unwrap_or(h.name()).to_string(),
+            });
+            None
+        }
         ResolveDepsStart => Some(format!(
-            "{} {}",
-            c.action.paint("::"),
-            c.bold.paint("Resolving dependencies...")
+            "{} Resolving dependencies...",
+            c.tx_install.paint("[OK]")
         )),
         InterConflictsStart => Some(format!(
-            "{} {}",
-            c.action.paint("::"),
-            c.bold.paint("Checking conflicts...")
+            "{} Checking conflicts...",
+            c.tx_install.paint("[OK]")
         )),
         IntegrityStart => Some(format!(
-            "{} {}",
-            c.action.paint("::"),
-            c.bold.paint("Checking package integrity...")
+            "{} Checking integrity...",
+            c.tx_install.paint("[OK]")
         )),
         LoadStart => Some(format!(
-            "{} {}",
-            c.action.paint("::"),
-            c.bold.paint("Loading package files...")
+            "{} Loading package files...",
+            c.tx_install.paint("[OK]")
         )),
         KeyringStart => Some(format!(
-            "{} {}",
-            c.action.paint("::"),
-            c.bold.paint("Checking keyring...")
+            "{} Checking keyring...",
+            c.tx_install.paint("[OK]")
         )),
         DiskSpaceStart => Some(format!(
-            "{} {}",
-            c.action.paint("::"),
-            c.bold.paint("Checking disk space...")
+            "{} Checking disk space...",
+            c.tx_install.paint("[OK]")
         )),
         TransactionStart => Some(format!(
-            "{} {}",
-            c.action.paint("::"),
-            c.bold.paint("Committing transaction...")
+            "{} Committing transaction...",
+            c.bold.paint("[..]")
         )),
-        HookStart(he) => Some(format!(
-            "{} {} ({})",
-            c.action.paint("::"),
-            c.bold.paint("ALPM hooks"),
-            hook_when_label(he.when())
-        )),
-        HookDone(he) => Some(format!(
-            "{} {} ({}) finished",
-            c.action.paint("::"),
-            c.bold.paint("ALPM hooks"),
-            hook_when_label(he.when())
-        )),
-        HookRunStart(h) => Some(format!(
-            "{} {} [{}/{}] {}",
-            c.action.paint("::"),
-            c.bold.paint(h.name()),
-            h.position(),
-            h.total(),
-            h.desc().unwrap_or("")
-        )),
-        PackageOperationStart(_) => Some(format!(
-            "{} {}",
-            c.action.paint("::"),
-            c.bold.paint("Applying package operation...")
-        )),
+        HookStart(he) => {
+            if he.when() == HookWhen::PostTransaction {
+                let _ = emit(&HelperToParent::HookPhaseStart);
+            }
+            None
+        }
+        HookDone(he) => {
+            if he.when() == HookWhen::PostTransaction {
+                let _ = emit(&HelperToParent::HookPhaseDone);
+            }
+            None
+        }
+        HookRunStart(_h) => None,
+        Event::PackageOperationDone(e) => match e.operation() {
+            PackageOperation::Install(newpkg) => Some(format!(
+                "{} Installed {}",
+                c.tx_install.paint("[OK]"),
+                newpkg.name()
+            )),
+            PackageOperation::Upgrade(newpkg, oldpkg) => Some(format!(
+                "{} Upgraded {} -> {}",
+                c.tx_install.paint("[OK]"),
+                oldpkg.version().as_str(),
+                newpkg.version().as_str()
+            )),
+            PackageOperation::Remove(oldpkg) => Some(format!(
+                "{} Removed {}",
+                c.tx_install.paint("[OK]"),
+                oldpkg.name()
+            )),
+            _ => None,
+        },
         _ => None,
     };
     if let Some(message) = message_opt {
@@ -1253,79 +1413,85 @@ fn helper_progress_cb(
     percent: i32,
     howmany: usize,
     current: usize,
-    c: &mut Colors,
+    state: &mut HelperInstallThrottle,
 ) {
-    if percent == 0 || percent == 50 || percent == 100 {
-        let message = format!(
-            "{} {} [{}/{}] {}% ({:?})",
-            c.action.paint("::"),
-            c.bold.paint(pkgname),
+    match progress {
+        Progress::AddStart | Progress::UpgradeStart | Progress::RemoveStart => {}
+        _ => return,
+    }
+
+    let now = Instant::now();
+    let key = pkgname.to_string();
+    let p = percent.clamp(0, 100) as u64;
+    let should_emit = match state.last_emit.get(&key) {
+        None => true,
+        Some(last) => now.saturating_duration_since(*last) >= Duration::from_millis(100),
+    } || p >= 100;
+    if should_emit {
+        state.last_emit.insert(key.clone(), now);
+        let _ = emit(&HelperToParent::InstallProgress {
+            package: key,
+            percent: p,
             current,
-            howmany,
-            percent,
-            progress
-        );
-        let _ = emit(&HelperToParent::Progress { message });
+            total: howmany,
+        });
     }
 }
 
 fn helper_question_cb(question: AnyQuestion, state: &mut QuestionIpcState) {
-    let (prompt, default_yes, mut apply_answer): (
-        String,
-        bool,
-        Box<dyn FnMut(bool) + '_>,
-    ) = match question.question() {
-        alpm::Question::InstallIgnorepkg(mut q) => (
-            format!("Install ignored package '{}'?", q.pkg().name()),
-            true,
-            Box::new(move |yes| q.set_install(yes)),
-        ),
-        alpm::Question::Replace(q) => (
-            format!(
-                "Replace '{}' with '{}' from '{}'?",
-                q.oldpkg().name(),
-                q.newpkg().name(),
-                q.newdb().name()
+    let (prompt, default_yes, mut apply_answer): (String, bool, Box<dyn FnMut(bool) + '_>) =
+        match question.question() {
+            alpm::Question::InstallIgnorepkg(mut q) => (
+                format!("Install ignored package '{}'?", q.pkg().name()),
+                true,
+                Box::new(move |yes| q.set_install(yes)),
             ),
-            true,
-            Box::new(move |yes| q.set_replace(yes)),
-        ),
-        alpm::Question::Conflict(mut q) => (
-            format!(
-                "Resolve conflict by removing '{}' ?",
-                q.conflict().package2().name()
+            alpm::Question::Replace(q) => (
+                format!(
+                    "Replace '{}' with '{}' from '{}'?",
+                    q.oldpkg().name(),
+                    q.newpkg().name(),
+                    q.newdb().name()
+                ),
+                true,
+                Box::new(move |yes| q.set_replace(yes)),
             ),
-            !state.no_confirm,
-            Box::new(move |yes| q.set_remove(yes)),
-        ),
-        alpm::Question::Corrupted(mut q) => (
-            format!("Corrupted package '{}'. Remove from cache?", q.filepath()),
-            true,
-            Box::new(move |yes| q.set_remove(yes)),
-        ),
-        alpm::Question::RemovePkgs(mut q) => (
-            format!(
-                "Remove packages: {} ?",
-                q.packages()
-                    .iter()
-                    .map(|p| p.name())
-                    .collect::<Vec<_>>()
-                    .join(", ")
+            alpm::Question::Conflict(mut q) => (
+                format!(
+                    "Resolve conflict by removing '{}' ?",
+                    q.conflict().package2().name()
+                ),
+                !state.no_confirm,
+                Box::new(move |yes| q.set_remove(yes)),
             ),
-            true,
-            Box::new(move |yes| q.set_skip(!yes)),
-        ),
-        alpm::Question::SelectProvider(mut q) => {
-            let default_index = 0i32;
-            q.set_index(default_index);
-            return;
-        }
-        alpm::Question::ImportKey(mut q) => (
-            format!("Import key '{}' ({})?", q.fingerprint(), q.uid()),
-            true,
-            Box::new(move |yes| q.set_import(yes)),
-        ),
-    };
+            alpm::Question::Corrupted(mut q) => (
+                format!("Corrupted package '{}'. Remove from cache?", q.filepath()),
+                true,
+                Box::new(move |yes| q.set_remove(yes)),
+            ),
+            alpm::Question::RemovePkgs(mut q) => (
+                format!(
+                    "Remove packages: {} ?",
+                    q.packages()
+                        .iter()
+                        .map(|p| p.name())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                true,
+                Box::new(move |yes| q.set_skip(!yes)),
+            ),
+            alpm::Question::SelectProvider(mut q) => {
+                let default_index = 0i32;
+                q.set_index(default_index);
+                return;
+            }
+            alpm::Question::ImportKey(mut q) => (
+                format!("Import key '{}' ({})?", q.fingerprint(), q.uid()),
+                true,
+                Box::new(move |yes| q.set_import(yes)),
+            ),
+        };
 
     let yes = if state.no_confirm {
         default_yes
@@ -1372,8 +1538,7 @@ fn add_target(alpm: &mut alpm::Alpm, target: &str) -> Result<()> {
         let pkg = db
             .pkg(pkgname)
             .with_context(|| format!("target not found in repo '{}': {}", repo, pkgname))?;
-        alpm
-            .trans_add_pkg(pkg)
+        alpm.trans_add_pkg(pkg)
             .map_err(|e| anyhow!("failed to add target '{}': {}", target, e.error))?;
         return Ok(());
     }

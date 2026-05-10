@@ -18,7 +18,7 @@ use crate::config::{Config, LocalRepos, Mode, Op, Sign, YesNoAllTree, YesNoAsk};
 use crate::devel::{fetch_devel_info, load_devel_info, save_devel_info, DevelInfo};
 use crate::download::{self, Bases};
 use crate::exec::{command_status, has_command};
-use crate::fmt::{print_indent, print_install_verbose};
+use crate::fmt::print_indent;
 use crate::keys::check_pgp_keys;
 use crate::pkgbuild::PkgbuildRepo;
 use crate::resolver::{flags, resolver};
@@ -134,16 +134,6 @@ impl Installer {
         args.targets.clear();
         backend::pacman(config, &args)?.success()?;
         config.args.remove("y").remove("refresh");
-        Ok(())
-    }
-
-    fn early_pacman(&mut self, config: &mut Config, targets: Vec<String>) -> Result<()> {
-        let mut args = config.pacman_args();
-        args.targets.clear();
-        args.targets(targets.iter().map(|i| i.as_str()));
-        backend::pacman(config, &args)?.success()?;
-        config.args.remove("y").remove("refresh");
-        config.args.remove("u").remove("sysupgrade");
         Ok(())
     }
 
@@ -907,7 +897,7 @@ impl Installer {
         config.args.targets = config.targets.clone();
 
         let targets = args::parse_targets(targets_str);
-        let (mut repo_targets, aur_targets) = split_repo_aur_targets(config, &targets)?;
+        let (repo_targets, aur_targets) = split_repo_aur_targets(config, &targets)?;
 
         if targets_str.is_empty() && self.sysupgrade == 0 && !self.sysupgrade == 0 {
             bail!(tr!("no targets specified (use -h for help)"));
@@ -927,16 +917,11 @@ impl Installer {
                 }
             } else if !config.chroot
                 && !config.args.has_arg("u", "sysupgrade")
-                && (config.args.has_arg("y", "refresh")
-                    || config.args.has_arg("u", "sysupgrade")
-                    || !repo_targets.is_empty()
-                    || config.mode == Mode::REPO)
+                && config.args.has_arg("y", "refresh")
             {
-                let targets = repo_targets.iter().map(|t| t.to_string()).collect();
-                repo_targets.clear();
                 self.done_something = true;
                 self.ran_pacman = true;
-                self.early_pacman(config, targets)?;
+                self.early_refresh(config)?;
             }
         }
 
@@ -1060,21 +1045,12 @@ impl Installer {
 
     fn shoud_just_pacman(
         &self,
-        mode: Mode,
-        aur_targets: &[Targ<'_>],
-        upgrades: &Upgrades,
-        ran_pacman: bool,
+        _mode: Mode,
+        _aur_targets: &[Targ<'_>],
+        _upgrades: &Upgrades,
+        _ran_pacman: bool,
     ) -> bool {
-        if !mode.aur() && !mode.pkgbuild() {
-            return true;
-        }
-        if self.sysupgrade != 0 || self.refresh != 0 {
-            return false;
-        }
-        if ran_pacman {
-            return false;
-        }
-        aur_targets.is_empty() && upgrades.aur_keep.is_empty() && upgrades.pkgbuild_keep.is_empty()
+        false
     }
 
     async fn prepare_build(
@@ -1108,21 +1084,22 @@ impl Installer {
             return Ok(());
         }
 
-        if config.pacman.verbose_pkg_lists {
-            print_install_verbose(config, actions, &self.upgrades.devel);
-        } else {
-            let Some((table, totals)) =
-                crate::ui::install_confirmation_bundle(config, actions, &self.upgrades.devel)
-            else {
-                unreachable!(
-                    "empty install/build lists return early above"
-                );
-            };
-            crate::ui::print_install_confirmation_table(
-                config,
-                &table,
-                &totals,
-            );
+        let Some((table, totals)) =
+            crate::ui::install_confirmation_bundle(config, actions, &self.upgrades.devel)
+        else {
+            unreachable!("empty install/build lists return early above");
+        };
+        if !crate::ui::confirm_transaction(
+            config,
+            &table,
+            &totals,
+            if self.sysupgrade > 0 {
+                crate::ui::TxConfirmOp::Update
+            } else {
+                crate::ui::TxConfirmOp::Install
+            },
+        ) {
+            return Status::err(1);
         }
 
         let has_make = if !config.chroot
@@ -1145,8 +1122,6 @@ impl Installer {
             if !ask(config, &tr!("Proceed to review?"), true) {
                 return Status::err(1);
             }
-        } else if !ask(config, &tr!("Do you want to continue?"), true) {
-            return Status::err(1);
         }
 
         if actions.build.is_empty() {

@@ -4,7 +4,7 @@ use crate::config::Config;
 use crate::exec::Status;
 use crate::tx_helper::{run_plan_with_helper, TransactionPlan};
 
-use alpm::{AnyEvent, Event, Progress, SigLevel, TransFlag};
+use alpm::{AnyEvent, Event, PackageOperation, Progress, SigLevel, TransFlag};
 use alpm_utils::DbListExt;
 use anyhow::{anyhow, bail, Context, Result};
 use nix::unistd::Uid;
@@ -296,16 +296,34 @@ fn plan_from_args(args: &Args<&str>, no_confirm: bool) -> Result<TransactionPlan
 }
 
 fn event_cb(event: AnyEvent, c: &mut crate::config::Colors) {
-    let msg = match event.event() {
-        Event::ResolveDepsStart => Some("Resolving dependencies..."),
-        Event::InterConflictsStart => Some("Checking conflicts..."),
-        Event::IntegrityStart => Some("Checking package integrity..."),
-        Event::LoadStart => Some("Loading package files..."),
-        Event::KeyringStart => Some("Checking keyring..."),
-        Event::DiskSpaceStart => Some("Checking disk space..."),
-        Event::TransactionStart => Some("Committing transaction..."),
-        Event::HookStart(_) => Some("Running hooks..."),
-        Event::PackageOperationStart(_) => Some("Applying package operation..."),
+    let msg: Option<String> = match event.event() {
+        Event::ResolveDepsStart => Some("Resolving dependencies...".to_string()),
+        Event::InterConflictsStart => Some("Checking conflicts...".to_string()),
+        Event::IntegrityStart => Some("Checking integrity...".to_string()),
+        Event::LoadStart => Some("Loading package files...".to_string()),
+        Event::KeyringStart => Some("Checking keyring...".to_string()),
+        Event::DiskSpaceStart => Some("Checking disk space...".to_string()),
+        Event::TransactionStart => Some("Committing transaction...".to_string()),
+        Event::HookStart(_) => Some("Running hooks...".to_string()),
+        Event::PackageOperationDone(e) => match e.operation() {
+            PackageOperation::Install(newpkg) => Some(format!(
+                "{} Installed {}",
+                c.tx_install.paint("[OK]"),
+                newpkg.name()
+            )),
+            PackageOperation::Upgrade(newpkg, oldpkg) => Some(format!(
+                "{} Upgraded {} -> {}",
+                c.tx_install.paint("[OK]"),
+                oldpkg.version().as_str(),
+                newpkg.version().as_str()
+            )),
+            PackageOperation::Remove(oldpkg) => Some(format!(
+                "{} Removed {}",
+                c.tx_install.paint("[OK]"),
+                oldpkg.name()
+            )),
+            _ => None,
+        },
         _ => None,
     };
 
@@ -315,22 +333,14 @@ fn event_cb(event: AnyEvent, c: &mut crate::config::Colors) {
 }
 
 fn progress_cb(
-    progress: Progress,
-    pkgname: &str,
-    percent: i32,
-    howmany: usize,
-    current: usize,
-    c: &mut crate::config::Colors,
+    _progress: Progress,
+    _pkgname: &str,
+    _percent: i32,
+    _howmany: usize,
+    _current: usize,
+    _c: &mut crate::config::Colors,
 ) {
-    if percent == 0 || percent == 50 || percent == 100 {
-        println!(
-            "{} {} [{}/{}] {}% ({:?})",
-            c.action.paint("::"),
-            c.bold.paint(pkgname),
-            current,
-            howmany,
-            percent,
-            progress
-        );
-    }
+    // Intentionally silent. event_cb handles all user-visible output.
+    // progress_cb firing for Integrity, Keyring, Diskspace etc. caused repeated messages.
+    let _ = _progress;
 }

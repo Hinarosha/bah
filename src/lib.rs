@@ -345,7 +345,12 @@ async fn handle_sync(config: &mut Config) -> Result<i32> {
     if config.args.has_arg("i", "info") {
         info::info(config, config.args.count("i", "info") > 1).await
     } else if config.args.has_arg("c", "clean") {
-        clean::clean(config)?;
+        if config.mode.repo() {
+            backend::pacman(config, &config.args)?.success()?;
+        }
+        if config.mode.aur() {
+            clean::clean_aur_and_diff(config)?;
+        }
         Ok(0)
     } else if config.args.has_arg("l", "list") {
         sync::list(config).await

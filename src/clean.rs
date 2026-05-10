@@ -14,125 +14,38 @@ use std::process::Command;
 use alpm_utils::DbListExt;
 use anyhow::{Context, Result};
 use srcinfo::Srcinfo;
-use std::collections::HashSet;
 use tr::tr;
 
-pub fn clean(config: &Config) -> Result<()> {
-    if config.mode.repo() {
-        clean_repo_cache(config)?;
-    }
-
-    if config.mode.aur() {
-        let rm = config.delete >= 1;
-        let remove_all = config.clean >= 2;
-        let clean_method = &config.pacman.clean_method;
-        let keep_installed = clean_method.iter().any(|a| a == "KeepInstalled");
-        let keep_current = clean_method.iter().any(|a| a == "KeepCurrent");
-
-        if config.mode.repo() {
-            println!();
-        }
-
-        let question = if remove_all {
-            tr!("Do you want to clean ALL AUR packages from cache?")
-        } else {
-            tr!("Do you want to clean all other AUR packages from cache?")
-        };
-
-        printtr!("Clone Directory: {}", config.fetch.clone_dir.display());
-
-        if ask(config, &question, !remove_all) {
-            clean_aur(config, keep_installed, keep_current, remove_all, rm)?;
-        }
-
-        printtr!("\nDiff Directory: {}", config.fetch.diff_dir.display());
-
-        let question = tr!("Do you want to remove all saved diffs?");
-        if ask(config, &question, true) {
-            clean_diff(config)?;
-        }
-    }
-
-    Ok(())
-}
-
-fn clean_repo_cache(config: &Config) -> Result<()> {
+pub fn clean_aur_and_diff(config: &Config) -> Result<()> {
+    let rm = config.delete >= 1;
     let remove_all = config.clean >= 2;
     let clean_method = &config.pacman.clean_method;
     let keep_installed = clean_method.iter().any(|a| a == "KeepInstalled");
     let keep_current = clean_method.iter().any(|a| a == "KeepCurrent");
 
+    if config.mode.repo() {
+        println!();
+    }
+
     let question = if remove_all {
-        tr!("Do you want to clean ALL repo packages from cache?")
+        tr!("Do you want to clean ALL AUR packages from cache?")
     } else {
-        tr!("Do you want to clean old repo packages from cache?")
+        tr!("Do you want to clean all other AUR packages from cache?")
     };
 
-    for cachedir in config.alpm.cachedirs().iter() {
-        printtr!("Cache Directory: {}", cachedir);
+    printtr!("Clone Directory: {}", config.fetch.clone_dir.display());
+
+    if ask(config, &question, !remove_all) {
+        clean_aur(config, keep_installed, keep_current, remove_all, rm)?;
     }
 
-    if !ask(config, &question, !remove_all) {
-        return Ok(());
+    printtr!("\nDiff Directory: {}", config.fetch.diff_dir.display());
+
+    let question = tr!("Do you want to remove all saved diffs?");
+    if ask(config, &question, true) {
+        clean_diff(config)?;
     }
 
-    let keep = keep_prefixes(config, keep_installed, keep_current);
-    for cachedir in config.alpm.cachedirs().iter() {
-        clean_cache_dir(Path::new(cachedir), remove_all, &keep)?;
-    }
-
-    Ok(())
-}
-
-fn keep_prefixes(config: &Config, keep_installed: bool, keep_current: bool) -> HashSet<String> {
-    let mut keep = HashSet::new();
-    if keep_installed {
-        for pkg in config.alpm.localdb().pkgs().iter() {
-            keep.insert(format!("{}-{}-", pkg.name(), pkg.version()));
-        }
-    }
-    if keep_current {
-        for pkg in config.alpm.syncdbs().iter().flat_map(|db| db.pkgs().iter()) {
-            keep.insert(format!("{}-{}-", pkg.name(), pkg.version()));
-        }
-    }
-    keep
-}
-
-fn clean_cache_dir(dir: &Path, remove_all: bool, keep: &HashSet<String>) -> Result<()> {
-    if !dir.exists() {
-        return Ok(());
-    }
-
-    for entry in read_dir(dir).with_context(|| tr!("can't open cache dir: {}", dir.display()))? {
-        let entry = entry?;
-        if !entry.file_type()?.is_file() {
-            continue;
-        }
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if !name.contains(".pkg.tar") || name.ends_with(".sig") {
-            continue;
-        }
-
-        let keep_file = !remove_all && keep.iter().any(|prefix| name.starts_with(prefix));
-        if keep_file {
-            continue;
-        }
-
-        let path = entry.path();
-        remove_file(&path).with_context(|| tr!("could not remove '{}'", path.display().to_string()))?;
-
-        let sig = path.with_extension(format!(
-            "{}.sig",
-            path.extension()
-                .map(|e| e.to_string_lossy().to_string())
-                .unwrap_or_default()
-        ));
-        if sig.exists() {
-            let _ = remove_file(sig);
-        }
-    }
     Ok(())
 }
 

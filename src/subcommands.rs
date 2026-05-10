@@ -37,9 +37,20 @@ pub fn expand_subcommands(args: Vec<String>) -> Vec<String> {
         "install" => prepend(&["-S"], rest),
 
         // Full system refresh + upgrade (same idea as bare `bah`).
-        "update" | "upgrade" | "sync" | "up" => {
+        "update" | "upgrade" | "up" => {
             if rest.is_empty() {
                 vec!["-Syu".to_string()]
+            } else {
+                let mut v = vec!["-S".to_string()];
+                v.extend(rest);
+                v
+            }
+        }
+
+        // `sync` should only refresh repo databases, not perform a full upgrade.
+        "sync" => {
+            if rest.is_empty() {
+                vec!["-Sy".to_string()]
             } else {
                 let mut v = vec!["-S".to_string()];
                 v.extend(rest);
@@ -117,6 +128,16 @@ mod tests {
     #[test]
     fn update_empty_is_syu() {
         assert_eq!(expand_subcommands(vec!["update".into()]), vec!["-Syu"]);
+    }
+
+    #[test]
+    fn sync_empty_is_sy() {
+        assert_eq!(expand_subcommands(vec!["sync".into()]), vec!["-Sy"]);
+    }
+
+    #[test]
+    fn sync_target_uses_s() {
+        assert_eq!(expand_subcommands(vec!["sync".into(), "foo".into()]), vec!["-S", "foo"]);
     }
 
     #[test]

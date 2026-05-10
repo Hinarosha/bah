@@ -142,8 +142,8 @@ impl Colors {
             code: Style::new().fg(Cyan),
             news_date: Style::new().fg(Cyan).bold(),
             old_version: Style::new().fg(Red),
-            install_version: Style::new().fg(ansiterm::Color::Fixed(243)),
-            new_version: Style::new().fg(Green),
+            install_version: Style::new().fg(Yellow),
+            new_version: Style::new().fg(Cyan),
             number_menu: Style::new().fg(Purple),
             group: Style::new().fg(Blue).bold(),
             stats_line_separator: Style::new().fg(Blue).bold(),
@@ -151,7 +151,7 @@ impl Colors {
             tx_install: Style::new().fg(Green),
             tx_upgrade: Style::new().fg(Cyan),
             tx_remove: Style::new().fg(Red),
-            tx_arrow: Style::new().fg(ansiterm::Color::Fixed(246)),
+            tx_arrow: Style::new().fg(Blue),
         }
     }
 }

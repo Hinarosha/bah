@@ -3,25 +3,35 @@
 //! Build a [`ConfirmationTable`], pass per-column caps, then [`print_confirmation_table`].
 //! Install flows use [`install_confirmation_bundle`] + [`print_install_confirmation_table`].
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::read_dir;
+use std::io::{stdout, Write};
 use std::path::Path;
+use std::time::Instant;
 
 use crate::config::Config;
 use crate::fmt::{old_ver, truncate_to_width};
 use crate::info::get_terminal_width;
+use crate::util::ask;
 use alpm::Ver;
 use aur_depends::{Actions, Base};
 use tr::tr;
 use unicode_width::UnicodeWidthStr;
 
 const COL_GAP: &str = "  ";
+const ANSI_CLEAR_LINE: &str = "\r\x1b[2K";
+const ANSI_BOLD: &str = "\x1b[1m";
+const ANSI_BOLD_BLUE: &str = "\x1b[1;34m";
+const ANSI_GREEN: &str = "\x1b[32m";
+const ANSI_RESET: &str = "\x1b[0m";
+const PROGRESS_BAR_WIDTH: usize = 30;
 
 /// PACMAN-like verb shown in the confirmation grid (system colors via [`Config`](crate::config::Config)).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TxActionKind {
     Install,
     Upgrade,
+    Remove,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,12 +40,21 @@ pub enum TxSourceKind {
     Aur,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TxConfirmOp {
+    Install,
+    Update,
+    Remove,
+}
+
 /// One line in the confirmation grid.
 #[derive(Debug, Clone, Default)]
 pub struct ConfirmationRow {
     pub cells: Vec<String>,
     /// When set, install-style painting applies to this row (action + version column).
     pub tx: Option<TxRowPaint>,
+    /// Logical row group used for pre-transaction rendering.
+    pub group: Option<TxRowGroup>,
 }
 
 /// Extra paint data for transaction rows (plain `cells` still drive column widths).
@@ -45,6 +64,12 @@ pub struct TxRowPaint {
     pub source: TxSourceKind,
     pub old_ver: String,
     pub new_ver: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TxRowGroup {
+    Target,
+    Dependency,
 }
 
 /// Tabular confirmation (install/remove/update list) rendered DNF-like.
@@ -67,6 +92,7 @@ impl ConfirmationTable {
         self.rows.push(ConfirmationRow {
             cells,
             tx: None,
+            group: None,
         });
     }
 }
@@ -187,17 +213,25 @@ fn version_plain(old: &str, new: &str) -> String {
     format!("{} -> {}", v_label(old), v_label(new))
 }
 
+fn version_plain_for_tx(txp: &TxRowPaint) -> String {
+    match txp.action {
+        TxActionKind::Remove => v_label(&txp.old_ver),
+        _ => version_plain(&txp.old_ver, &txp.new_ver),
+    }
+}
+
 fn style_for_action(c: &crate::config::Colors, k: TxActionKind) -> ansiterm::Style {
     match k {
         TxActionKind::Install => c.tx_install,
         TxActionKind::Upgrade => c.tx_upgrade,
+        TxActionKind::Remove => c.tx_remove,
     }
 }
 
-fn tx_source_title(k: TxSourceKind) -> String {
+fn tx_group_title(k: TxRowGroup) -> String {
     match k {
-        TxSourceKind::Repo => tr!("Repository packages"),
-        TxSourceKind::Aur => tr!("AUR / PKGBUILD packages"),
+        TxRowGroup::Target => tr!("Target Packages"),
+        TxRowGroup::Dependency => tr!("Dependencies"),
     }
 }
 
@@ -216,14 +250,9 @@ fn format_bytes_u64(n: u64) -> String {
     format!("{:.2} GiB", n as f64 / (K * K * K) as f64)
 }
 
-fn format_bytes_i64_signed(n: i64) -> String {
-    let sign = if n > 0 { "+" } else { "" };
-    format!("{sign}{}", format_bytes_u64(n.unsigned_abs()))
-}
-
 fn format_download_cell(n: Option<i64>) -> String {
     match n {
-        None => "—".to_string(),
+        None => tr!("Build"),
         Some(x) if x <= 0 => "—".to_string(),
         Some(x) => format_bytes_u64(x as u64),
     }
@@ -237,10 +266,7 @@ fn repo_tx_action(old: Option<&str>, new: &str) -> TxActionKind {
     }
 }
 
-fn disk_delta_for_repo_pkg(
-    config: &Config,
-    sync_pkg: &alpm::Package,
-) -> Option<i64> {
+fn disk_delta_for_repo_pkg(config: &Config, sync_pkg: &alpm::Package) -> Option<i64> {
     let new_isize = sync_pkg.isize();
     match config.alpm.localdb().pkg(sync_pkg.name()) {
         Ok(local) => Some(new_isize - local.isize()),
@@ -282,7 +308,11 @@ pub fn install_confirmation_bundle<'a>(
                         .map(|v: &Ver| v.as_str().to_string())
                         .unwrap_or_default();
                     let action = repo_tx_action(
-                        if old.is_empty() { None } else { Some(old.as_str()) },
+                        if old.is_empty() {
+                            None
+                        } else {
+                            Some(old.as_str())
+                        },
                         &new,
                     );
                     let ver_plain = version_plain(&old, &new);
@@ -299,6 +329,11 @@ pub fn install_confirmation_bundle<'a>(
                             old_ver: old,
                             new_ver: new,
                         }),
+                        group: Some(if pkg.target {
+                            TxRowGroup::Target
+                        } else {
+                            TxRowGroup::Dependency
+                        }),
                     });
                 }
             }
@@ -314,7 +349,11 @@ pub fn install_confirmation_bundle<'a>(
                         .map(|v: &Ver| v.as_str().to_string())
                         .unwrap_or_default();
                     let action = repo_tx_action(
-                        if old.is_empty() { None } else { Some(old.as_str()) },
+                        if old.is_empty() {
+                            None
+                        } else {
+                            Some(old.as_str())
+                        },
                         &new,
                     );
                     let ver_plain = version_plain(&old, &new);
@@ -322,7 +361,11 @@ pub fn install_confirmation_bundle<'a>(
                         cells: vec![
                             name,
                             ver_plain.clone(),
-                            format_download_cell(aur_cached_pkg_size(config, &pkg.pkg.pkgname, &new)),
+                            format_download_cell(aur_cached_pkg_size(
+                                config,
+                                &pkg.pkg.pkgname,
+                                &new,
+                            )),
                             pkg.pkg.pkgdesc.clone().unwrap_or_default(),
                         ],
                         tx: Some(TxRowPaint {
@@ -330,6 +373,11 @@ pub fn install_confirmation_bundle<'a>(
                             source: TxSourceKind::Aur,
                             old_ver: old,
                             new_ver: new,
+                        }),
+                        group: Some(if pkg.target {
+                            TxRowGroup::Target
+                        } else {
+                            TxRowGroup::Dependency
                         }),
                     });
                 }
@@ -356,7 +404,11 @@ pub fn install_confirmation_bundle<'a>(
             .map(|p| p.version().as_str().to_string())
             .unwrap_or_default();
         let action = repo_tx_action(
-            if old.is_empty() { None } else { Some(old.as_str()) },
+            if old.is_empty() {
+                None
+            } else {
+                Some(old.as_str())
+            },
             &new,
         );
         let dsz = sync_pkg.download_size();
@@ -382,6 +434,11 @@ pub fn install_confirmation_bundle<'a>(
                 old_ver: old,
                 new_ver: new,
             }),
+            group: Some(if pkg.target {
+                TxRowGroup::Target
+            } else {
+                TxRowGroup::Dependency
+            }),
         });
     }
 
@@ -391,8 +448,51 @@ pub fn install_confirmation_bundle<'a>(
     Some((table, totals))
 }
 
+pub fn remove_confirmation_bundle(
+    config: &Config,
+    targets: &[String],
+) -> Option<(ConfirmationTable, InstallConfirmTotals)> {
+    if targets.is_empty() {
+        return None;
+    }
+    let db = config.alpm.localdb();
+    let mut table = ConfirmationTable::new(tr!("Package changes"));
+    table.headers = vec![tr!("Package"), tr!("Version"), tr!("Description")];
+    let mut totals = InstallConfirmTotals::default();
+    for target in targets {
+        let Ok(pkg) = db.pkg(target.as_str()) else {
+            continue;
+        };
+        totals.had_repo_pkg = true;
+        totals.disk_delta_bytes -= pkg.isize();
+        let old_ver = pkg.version().as_str().to_string();
+        table.rows.push(ConfirmationRow {
+            cells: vec![
+                pkg.name().to_string(),
+                v_label(&old_ver),
+                pkg.desc().unwrap_or_default().to_string(),
+            ],
+            tx: Some(TxRowPaint {
+                action: TxActionKind::Remove,
+                source: TxSourceKind::Repo,
+                old_ver,
+                new_ver: String::new(),
+            }),
+            group: Some(TxRowGroup::Target),
+        });
+    }
+    if table.rows.is_empty() {
+        None
+    } else {
+        Some((table, totals))
+    }
+}
+
 fn paint_version_cell(config: &Config, paint: &TxRowPaint) -> String {
     let c = &config.color;
+    if paint.action == TxActionKind::Remove {
+        return format!("{}", c.old_version.paint(v_label(&paint.old_ver)));
+    }
     let o = v_label(&paint.old_ver);
     let n = v_label(&paint.new_ver);
     format!(
@@ -418,8 +518,7 @@ fn read_first_changelog_line(pkg: &alpm::Package) -> Option<String> {
 }
 
 fn latest_changelog_or_desc(pkg: &alpm::Package) -> String {
-    read_first_changelog_line(pkg)
-        .unwrap_or_else(|| pkg.desc().unwrap_or_default().to_string())
+    read_first_changelog_line(pkg).unwrap_or_else(|| pkg.desc().unwrap_or_default().to_string())
 }
 
 fn aur_cached_pkg_size(config: &Config, name: &str, ver: &str) -> Option<i64> {
@@ -448,17 +547,29 @@ fn aur_cached_pkg_size(config: &Config, name: &str, ver: &str) -> Option<i64> {
 }
 
 fn section_separator_line(term_w: usize, title: &str) -> String {
-    let label = format!(" {} ", title);
-    if term_w <= label.width() + 2 {
+    // Keep section headers visually grouped but move title toward the left with a small bar inset.
+    const LEFT_INSET: &str = " --";
+    let label = format!("{LEFT_INSET}{title}");
+    if term_w <= label.width() {
         return truncate_to_width(&label, term_w.max(1));
     }
-    let side = (term_w - label.width()) / 2;
     let mut out = String::with_capacity(term_w);
-    out.push_str(&"─".repeat(side));
     out.push_str(&label);
     let rem = term_w.saturating_sub(out.width());
-    out.push_str(&"─".repeat(rem));
+    out.push_str(&"-".repeat(rem));
     out
+}
+
+fn tx_table_title(op: TxConfirmOp, count: usize) -> String {
+    match op {
+        TxConfirmOp::Install => tr!("Packages to install ({}):", count),
+        TxConfirmOp::Update => tr!("Packages to update ({}):", count),
+        TxConfirmOp::Remove => tr!("Packages to remove ({}):", count),
+    }
+}
+
+fn paint_section_header(line: String) -> String {
+    format!("{ANSI_BOLD_BLUE}{line}{ANSI_RESET}")
 }
 
 /// Renders the install preview (structured rows, right-aligned download column) and a compact totals line.
@@ -466,11 +577,13 @@ pub fn print_install_confirmation_table(
     config: &Config,
     table: &ConfirmationTable,
     totals: &InstallConfirmTotals,
+    op: TxConfirmOp,
 ) {
     if table.headers.is_empty() || table.rows.is_empty() {
         return;
     }
-    let ncol = 4usize;
+    let ncol = table.headers.len();
+    let has_size_col = ncol >= 4;
     if table.rows.iter().any(|r| r.cells.len() != ncol) {
         return;
     }
@@ -500,18 +613,23 @@ pub fn print_install_confirmation_table(
         .chain(Some(table.headers[1].width()))
         .max()
         .unwrap_or(7);
-    let dl_w = table
-        .rows
-        .iter()
-        .map(|r| r.cells[2].width())
-        .chain(Some(table.headers[2].width()))
-        .max()
-        .unwrap_or(8)
-        .min(14);
+    let dl_w = if has_size_col {
+        table
+            .rows
+            .iter()
+            .map(|r| r.cells[2].width())
+            .chain(Some(table.headers[2].width()))
+            .max()
+            .unwrap_or(8)
+            .min(14)
+    } else {
+        0
+    };
 
     // Horizontal budget for Version + Detail after Package, Download and gaps — same spirit as search.
     const MIN_DETAIL: usize = 12;
-    let remainder = term_w.saturating_sub(pkg_w + dl_w + col_gap * 3);
+    let gaps_count = if has_size_col { 3 } else { 2 };
+    let remainder = term_w.saturating_sub(pkg_w + dl_w + col_gap * gaps_count);
     let hdr_ver_width = table.headers[1].width();
     let mut ver_w = ver_natural.max(hdr_ver_width);
     if ver_w + MIN_DETAIL > remainder {
@@ -520,18 +638,19 @@ pub fn print_install_confirmation_table(
     let detail_w = remainder.saturating_sub(ver_w).max(MIN_DETAIL);
 
     let c = &config.color;
+    // Description column should stay readable but visually secondary ("dark gray" effect) on TTY colors.
+    let detail_style = ansiterm::Style::new().fg(ansiterm::Color::White).dimmed();
     println!();
-    println!("{} {}", c.action.paint("::"), c.bold.paint(&table.title));
+    println!(
+        "{} {}",
+        c.action.paint("::"),
+        c.bold.paint(tx_table_title(op, table.rows.len()))
+    );
 
     const PKG_COL: usize = 0;
-    const VER_COL: usize = 1;
-    const DL_COL: usize = 2;
-    const DETAIL_COL: usize = 3;
+    let dl_col = if has_size_col { Some(2usize) } else { None };
+    let detail_col = if has_size_col { 3usize } else { 2usize };
 
-    let hdr_pkg = truncate_to_width(&table.headers[PKG_COL], pkg_w);
-    let hdr_ver = truncate_to_width(&table.headers[VER_COL], ver_w);
-    let hdr_dl = truncate_to_width(&table.headers[DL_COL], dl_w);
-    let hdr_det = truncate_to_width(&table.headers[DETAIL_COL], detail_w);
     let render_row = |row: &ConfirmationRow, txp: &TxRowPaint| {
         let pkg_plain = truncate_to_width(&row.cells[PKG_COL], pkg_w);
         let pkg_vis_w = pkg_plain.width();
@@ -541,7 +660,7 @@ pub fn print_install_confirmation_table(
             " ".repeat(pkg_w.saturating_sub(pkg_vis_w))
         );
 
-        let ver_raw = version_plain(&txp.old_ver, &txp.new_ver);
+        let ver_raw = version_plain_for_tx(txp);
         let ver_trunc = truncate_to_width(&ver_raw, ver_w);
         let ver_vis_w = ver_trunc.width();
         let ver_cell = format!(
@@ -557,67 +676,76 @@ pub fn print_install_confirmation_table(
             format!("{}", c.field.paint(&ver_cell))
         };
 
-        let dl_plain = truncate_to_width(&row.cells[DL_COL], dl_w);
-        let dl_vis_w = dl_plain.width();
-        let dl_cell = format!(
-            "{}{}",
-            " ".repeat(dl_w.saturating_sub(dl_vis_w)),
-            dl_plain
-        );
+        let dl_cell = dl_col.map(|idx| {
+            let dl_plain = truncate_to_width(&row.cells[idx], dl_w);
+            let dl_vis_w = dl_plain.width();
+            format!("{}{}", " ".repeat(dl_w.saturating_sub(dl_vis_w)), dl_plain)
+        });
 
-        let detail_plain = truncate_to_width(&row.cells[DETAIL_COL], detail_w);
+        let detail_plain = truncate_to_width(&row.cells[detail_col], detail_w);
         let detail_vis_w = detail_plain.width();
         let detail_cell = format!(
             "{}{}",
             detail_plain,
             " ".repeat(detail_w.saturating_sub(detail_vis_w))
         );
-        println!(
-            "{}{}{}{}{}{}{}",
-            style_for_action(c, txp.action).paint(&pkg_cell),
-            COL_GAP,
-            ver_styled,
-            COL_GAP,
-            c.stats_value.paint(&dl_cell),
-            COL_GAP,
-            c.install_version.paint(&detail_cell)
-        );
+        if let Some(dl) = dl_cell {
+            println!(
+                "{}{}{}{}{}{}{}",
+                style_for_action(c, txp.action).paint(&pkg_cell),
+                COL_GAP,
+                ver_styled,
+                COL_GAP,
+                c.number_menu.paint(&dl),
+                COL_GAP,
+                detail_style.paint(&detail_cell)
+            );
+        } else {
+            println!(
+                "{}{}{}{}{}",
+                style_for_action(c, txp.action).paint(&pkg_cell),
+                COL_GAP,
+                ver_styled,
+                COL_GAP,
+                detail_style.paint(&detail_cell)
+            );
+        }
     };
 
-    for source in [TxSourceKind::Aur, TxSourceKind::Repo] {
-        let has_rows = table.rows.iter().any(|r| r.tx.as_ref().is_some_and(|t| t.source == source));
-        if !has_rows {
-            continue;
+    if op == TxConfirmOp::Install {
+        for group in [TxRowGroup::Target, TxRowGroup::Dependency] {
+            let has_group_rows = table
+                .rows
+                .iter()
+                .any(|r| r.group.is_some_and(|g| g == group));
+            if !has_group_rows {
+                continue;
+            }
+            println!(
+                "{}",
+                paint_section_header(section_separator_line(term_w, &tx_group_title(group)))
+            );
+            for row in &table.rows {
+                let Some(txp) = row.tx.as_ref() else {
+                    continue;
+                };
+                if row.group.is_some_and(|g| g == group) {
+                    render_row(row, txp);
+                }
+            }
         }
-        println!(
-            "{}",
-            c.stats_line_separator
-                .paint(section_separator_line(term_w, &tx_source_title(source)))
-        );
-        println!(
-            "{}{:pkg_pad$}  {}{:ver_pad$}  {}{:dl_pad$}  {}",
-            c.field.paint(&hdr_pkg),
-            "",
-            c.field.paint(&hdr_ver),
-            "",
-            c.field.paint(&hdr_dl),
-            "",
-            c.field.paint(&hdr_det),
-            pkg_pad = pkg_w.saturating_sub(hdr_pkg.width()),
-            ver_pad = ver_w.saturating_sub(hdr_ver.width()),
-            dl_pad = dl_w.saturating_sub(hdr_dl.width()),
-        );
+    } else {
         for row in &table.rows {
             let Some(txp) = row.tx.as_ref() else {
                 continue;
             };
-            if txp.source == source {
-                render_row(row, txp);
-            }
+            render_row(row, txp);
         }
     }
 
-    print_install_confirmation_summary(config, totals);
+    if op == TxConfirmOp::Install || op == TxConfirmOp::Update {
+        print_install_confirmation_summary(config, totals);
+    }
 }
 
 /// Second line after the grid: download + disk deltas, compact and easy to scan.
@@ -635,23 +763,8 @@ pub fn print_install_confirmation_summary(config: &Config, totals: &InstallConfi
         }
         s
     };
-    let disk_s = if !totals.had_repo_pkg && totals.disk_partial {
-        format!("{}{}", tr!("—"), tr!(" *"))
-    } else if totals.disk_partial {
-        format!(
-            "{}{}",
-            format_bytes_i64_signed(totals.disk_delta_bytes),
-            tr!(" *")
-        )
-    } else {
-        format_bytes_i64_signed(totals.disk_delta_bytes)
-    };
-    let body = tr!("Total download: {} | Disk impact: {}", dl_s, disk_s);
-    println!(
-        "{} {}",
-        c.action.paint("::"),
-        c.bold.paint(&body)
-    );
+    let body = tr!("Total download size: {}", dl_s);
+    println!("{} {}", c.action.paint("::"), c.bold.paint(&body));
     if totals.download_excludes_aur || totals.disk_partial {
         println!(
             "   {}",
@@ -661,6 +774,336 @@ pub fn print_install_confirmation_summary(config: &Config, totals: &InstallConfi
         );
     }
     println!();
+}
+
+pub fn tx_confirm_prompt(op: TxConfirmOp) -> &'static str {
+    match op {
+        TxConfirmOp::Remove => "Proceed with removal?",
+        TxConfirmOp::Update => "Proceed with update?",
+        TxConfirmOp::Install => "Proceed with installation?",
+    }
+}
+
+pub fn confirm_transaction(
+    config: &Config,
+    table: &ConfirmationTable,
+    totals: &InstallConfirmTotals,
+    op: TxConfirmOp,
+) -> bool {
+    print_install_confirmation_table(config, table, totals, op);
+    ask(config, tx_confirm_prompt(op), true)
+}
+
+fn ansi_ok() -> String {
+    format!("{ANSI_GREEN}[OK]{ANSI_RESET}")
+}
+
+fn format_speed(bytes_per_sec: f64) -> String {
+    if bytes_per_sec >= 1_000_000.0 {
+        format!("{:.1} MB/s", bytes_per_sec / 1_000_000.0)
+    } else if bytes_per_sec >= 1_000.0 {
+        format!("{:.1} KB/s", bytes_per_sec / 1_000.0)
+    } else {
+        format!("{:.0} B/s", bytes_per_sec.max(0.0))
+    }
+}
+
+fn visible_width(s: &str) -> usize {
+    let mut plain = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' && chars.peek() == Some(&'[') {
+            let _ = chars.next();
+            for code_ch in chars.by_ref() {
+                if code_ch.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+            continue;
+        }
+        plain.push(ch);
+    }
+    plain.as_str().width()
+}
+
+fn progress_bar_with_width(percent: u64, width: usize) -> String {
+    let width = width.clamp(1, PROGRESS_BAR_WIDTH);
+    let pct = percent.min(100) as usize;
+    if pct >= 100 {
+        return format!("[{}]", "=".repeat(width));
+    }
+    let pos = ((pct * width) / 100).min(width.saturating_sub(1));
+    let mut body = String::with_capacity(width);
+    body.push_str(&"=".repeat(pos));
+    body.push('➔');
+    body.push_str(&"-".repeat(width.saturating_sub(pos + 1)));
+    format!("[{body}]")
+}
+
+fn progress_bar(percent: u64) -> String {
+    progress_bar_with_width(percent, PROGRESS_BAR_WIDTH)
+}
+
+fn split_download_filename(filename: &str) -> (String, String) {
+    let plain = filename
+        .trim_end_matches(".sig")
+        .split('/')
+        .next_back()
+        .unwrap_or(filename);
+    let stem = plain.split(".pkg.tar").next().unwrap_or(plain);
+    let mut parts = stem.rsplitn(4, '-').collect::<Vec<_>>();
+    if parts.len() == 4 {
+        let name = parts.pop().unwrap_or(stem).to_string();
+        return (name, plain.to_string());
+    }
+    (stem.to_string(), plain.to_string())
+}
+
+fn download_percent(downloaded: u64, total: u64) -> u64 {
+    if total == 0 {
+        0
+    } else {
+        downloaded.saturating_mul(100) / total
+    }
+    .min(100)
+}
+
+fn right_align_bar(left: &str, percent: u64, terminal_width: usize) -> Option<String> {
+    let bar = progress_bar(percent);
+    let left_width = visible_width(left);
+    let bar_width = visible_width(&bar);
+    if terminal_width < left_width + 1 + bar_width {
+        return None;
+    }
+    let padding = terminal_width.saturating_sub(left_width + bar_width);
+    Some(format!("{left}{}{bar}", " ".repeat(padding)))
+}
+
+fn compact_download_line(
+    name: &str,
+    remaining: &str,
+    speed: &str,
+    percent: u64,
+    terminal_width: usize,
+) -> String {
+    let pct = percent.min(100);
+    let mut name_width = name.width().min(18).max(1);
+    loop {
+        let display_name = truncate_to_width(name, name_width);
+        let left =
+            format!("{ANSI_BOLD}{display_name}{ANSI_RESET}... [{remaining} left] {speed} {pct}%");
+        let left_width = visible_width(&left);
+        if terminal_width > left_width + 3 {
+            let bar_width = terminal_width
+                .saturating_sub(left_width + 1 + 2)
+                .min(PROGRESS_BAR_WIDTH)
+                .max(1);
+            let bar = progress_bar_with_width(pct, bar_width);
+            let padding = terminal_width.saturating_sub(left_width + visible_width(&bar));
+            return format!("{left}{}{bar}", " ".repeat(padding));
+        }
+        if name_width <= 1 {
+            let bar = progress_bar_with_width(pct, 1);
+            return format!("{left} {bar}");
+        }
+        name_width -= 1;
+    }
+}
+
+fn render_download_line(
+    filename: &str,
+    downloaded: u64,
+    total: u64,
+    speed: f64,
+    terminal_width: usize,
+) -> String {
+    let (name, file) = split_download_filename(filename);
+    let percent = download_percent(downloaded, total);
+    let left = total.saturating_sub(downloaded);
+    let remaining = format_bytes_u64(left);
+    let speed = format_speed(speed);
+    let full_left = format!(
+        "Downloading {ANSI_BOLD}{name}{ANSI_RESET}... ({file}) [{remaining} left] {speed} {:>3}%",
+        percent
+    );
+    if let Some(line) = right_align_bar(&full_left, percent, terminal_width.max(1)) {
+        return line;
+    }
+    compact_download_line(&name, &remaining, &speed, percent, terminal_width.max(1))
+}
+
+fn render_install_line(package: &str, percent: u64, current: usize, total: usize) -> String {
+    let percent = percent.min(100);
+    let left = format!("Installing {package} ({current}/{total}) {:>3}%", percent);
+    right_align_bar(&left, percent, get_terminal_width().unwrap_or(120).max(1)).unwrap_or_else(
+        || {
+            let bar = progress_bar_with_width(percent, 12);
+            format!("{left} {bar}")
+        },
+    )
+}
+
+fn clear_progress_line() {
+    print!("{ANSI_CLEAR_LINE}");
+    let _ = stdout().lock().flush();
+}
+
+fn write_progress_line(line: &str) {
+    print!("{ANSI_CLEAR_LINE}{line}");
+    let _ = stdout().lock().flush();
+}
+
+/// Single-line ANSI transaction renderer.
+pub struct TransactionRenderController {
+    last_download: HashMap<String, (Instant, u64)>,
+    active_line: bool,
+    install_started: bool,
+}
+
+impl TransactionRenderController {
+    pub fn new() -> Self {
+        Self {
+            last_download: HashMap::new(),
+            active_line: false,
+            install_started: false,
+        }
+    }
+
+    fn println(&mut self, msg: impl AsRef<str>) {
+        if self.active_line {
+            clear_progress_line();
+            self.active_line = false;
+        }
+        println!("{}", msg.as_ref());
+    }
+
+    pub fn on_static_step(&mut self, msg: &str) {
+        self.println(msg);
+    }
+
+    pub fn on_download_progress(&mut self, package: &str, downloaded: u64, total: u64) {
+        if total == 0 || package.ends_with(".sig") {
+            return;
+        }
+        let now = Instant::now();
+        let speed = self
+            .last_download
+            .get(package)
+            .map(|(at, bytes)| {
+                let dt = now.saturating_duration_since(*at).as_secs_f64();
+                if dt > 0.0 && downloaded >= *bytes {
+                    (downloaded - *bytes) as f64 / dt
+                } else {
+                    0.0
+                }
+            })
+            .unwrap_or(0.0);
+        self.last_download
+            .insert(package.to_string(), (now, downloaded));
+
+        let line = render_download_line(
+            package,
+            downloaded.min(total),
+            total,
+            speed,
+            get_terminal_width().unwrap_or(120),
+        );
+        write_progress_line(&line);
+        self.active_line = true;
+        if downloaded >= total {
+            let (name, _) = split_download_filename(package);
+            clear_progress_line();
+            self.active_line = false;
+            if package.ends_with(".pkg.tar.zst") || package.ends_with(".pkg.tar.xz") {
+                println!("{} Downloaded {}", ansi_ok(), name);
+            }
+            self.last_download.remove(package);
+        }
+    }
+
+    pub fn on_install_progress(
+        &mut self,
+        package: &str,
+        percent: u64,
+        current: usize,
+        total: usize,
+    ) {
+        if !self.install_started {
+            if self.active_line {
+                clear_progress_line();
+                self.active_line = false;
+            }
+            self.install_started = true;
+        }
+        let line = render_install_line(package, percent, current, total);
+        write_progress_line(&line);
+        self.active_line = true;
+        if percent >= 100 {
+            clear_progress_line();
+            self.active_line = false;
+        }
+    }
+
+    pub fn on_log_line(&mut self, msg: &str) {
+        self.println(msg);
+    }
+
+    pub fn on_hook_phase_start(&mut self, config: &Config) {
+        let c = &config.color;
+        self.on_log_line(&format!(
+            "{} {}",
+            c.action.paint("::"),
+            c.bold.paint("Running post-transaction hooks...")
+        ));
+    }
+
+    pub fn on_hook_step(&mut self, _config: &Config, current: usize, total: usize, desc: &str) {
+        self.on_log_line(&format!("({}/{}) {} {}", current, total, desc, ansi_ok()));
+    }
+
+    pub fn on_hook_phase_done(&mut self, config: &Config) {
+        let c = &config.color;
+        self.on_log_line(&format!(
+            "{} {}",
+            c.action.paint("::"),
+            c.bold.paint("Post-transaction hooks completed.")
+        ));
+    }
+
+    pub fn finish(&mut self) {
+        if self.active_line {
+            clear_progress_line();
+            self.active_line = false;
+        }
+    }
+}
+
+/// Phase 4 hooks/post-install text output (no progress bar).
+pub fn print_hook_phase_start(config: &Config) {
+    let c = &config.color;
+    println!(
+        "{} {}",
+        c.action.paint("::"),
+        c.bold.paint("Running post-transaction hooks...")
+    );
+}
+
+pub fn print_hook_step(config: &Config, current: usize, total: usize, desc: &str) {
+    let c = &config.color;
+    println!(
+        "{} {}",
+        c.field.paint(format!("[{}/{}]", current, total)),
+        c.install_version.paint(desc)
+    );
+}
+
+pub fn print_hook_phase_done(config: &Config) {
+    let c = &config.color;
+    println!(
+        "{} {}",
+        c.action.paint("::"),
+        c.bold.paint("Post-transaction hooks completed.")
+    );
 }
 
 #[cfg(test)]
@@ -680,7 +1123,12 @@ mod tests {
     fn prints_small_table() {
         let cfg = Config::new().expect("config");
         let mut t = ConfirmationTable::new("Proceed with installation?");
-        t.headers = vec!["Package".into(), "Version".into(), "Repo".into(), "Notes".into()];
+        t.headers = vec![
+            "Package".into(),
+            "Version".into(),
+            "Repo".into(),
+            "Notes".into(),
+        ];
         t.push_row(vec![
             "nano".into(),
             "8.4-1 → 8.5-1".into(),
@@ -688,5 +1136,57 @@ mod tests {
             "minor".into(),
         ]);
         print_confirmation_table(&cfg, &t, &[12, 20, 8, 64]);
+    }
+
+    #[test]
+    fn transaction_prompts_match_operation() {
+        assert_eq!(
+            tx_confirm_prompt(TxConfirmOp::Install),
+            "Proceed with installation?"
+        );
+        assert_eq!(
+            tx_confirm_prompt(TxConfirmOp::Update),
+            "Proceed with update?"
+        );
+        assert_eq!(
+            tx_confirm_prompt(TxConfirmOp::Remove),
+            "Proceed with removal?"
+        );
+    }
+
+    #[test]
+    fn progress_bar_body_never_exceeds_fixed_width() {
+        for percent in [0, 1, 50, 67, 99, 100, 250] {
+            let bar = progress_bar(percent);
+            let body = bar.trim_start_matches('[').trim_end_matches(']');
+            assert_eq!(body.chars().count(), PROGRESS_BAR_WIDTH);
+        }
+    }
+
+    #[test]
+    fn download_progress_line_keeps_info_left_of_bar() {
+        let line =
+            render_download_line("vlc-3.0.21-1-x86_64.pkg.tar.zst", 67, 100, 1_200_000.0, 120);
+        assert!(line.starts_with("Downloading \x1b[1mvlc\x1b[0m..."));
+        assert!(!line.contains("[vlc]"));
+        assert!(line.contains("(vlc-3.0.21-1-x86_64.pkg.tar.zst)"));
+        assert!(line.contains("[33 B left]"));
+        assert!(line.contains("1.2 MB/s  67%"));
+        assert_eq!(visible_width(&line), 120);
+        let bar = line.split_whitespace().last().expect("bar");
+        let body = bar.trim_start_matches('[').trim_end_matches(']');
+        assert_eq!(body.chars().count(), PROGRESS_BAR_WIDTH);
+    }
+
+    #[test]
+    fn download_progress_line_compacts_on_narrow_terminal() {
+        let line =
+            render_download_line("cuda-13.2.1-2-x86_64.pkg.tar.zst", 1, 100, 1_200_000.0, 42);
+        assert!(line.starts_with("\x1b[1mcuda\x1b[0m..."));
+        assert!(!line.contains("(cuda-13.2.1-2-x86_64.pkg.tar.zst)"));
+        assert!(visible_width(&line) <= 42);
+        let bar = line.split_whitespace().last().expect("bar");
+        let body = bar.trim_start_matches('[').trim_end_matches(']');
+        assert!(body.chars().count() <= PROGRESS_BAR_WIDTH);
     }
 }
