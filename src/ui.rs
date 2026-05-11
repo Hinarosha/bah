@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::read_dir;
 use std::io::{stdout, Write};
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::config::Config;
 use crate::fmt::{old_ver, truncate_to_width};
@@ -812,6 +812,9 @@ fn format_speed(bytes_per_sec: f64) -> String {
 }
 
 fn format_time_remaining(bytes_remaining: u64, speed: f64) -> String {
+    if bytes_remaining == 0 {
+        return "0s".to_string();
+    }
     if speed <= 0.0 {
         return "--".to_string();
     }
@@ -980,15 +983,35 @@ fn write_progress_line(line: &str) {
 
 /// Single-line ANSI transaction renderer.
 pub struct TransactionRenderController {
-    last_download: HashMap<String, (Instant, u64)>,
+    download_state: HashMap<String, DownloadState>,
+    download_active_order: Vec<String>,
+    download_frozen_order: Vec<String>,
+    download_active_rendered: usize,
+    download_frozen_rendered: usize,
+    last_download_render: Option<Instant>,
     active_line: bool,
     install_started: bool,
+}
+
+#[derive(Debug, Clone)]
+struct DownloadState {
+    downloaded: u64,
+    total: u64,
+    speed: f64,
+    last_at: Instant,
+    last_bytes: u64,
+    frozen: bool,
 }
 
 impl TransactionRenderController {
     pub fn new() -> Self {
         Self {
-            last_download: HashMap::new(),
+            download_state: HashMap::new(),
+            download_active_order: Vec::new(),
+            download_frozen_order: Vec::new(),
+            download_active_rendered: 0,
+            download_frozen_rendered: 0,
+            last_download_render: None,
             active_line: false,
             install_started: false,
         }
@@ -1002,6 +1025,74 @@ impl TransactionRenderController {
         println!("{}", msg.as_ref());
     }
 
+    fn render_download_block(&mut self, force_render: bool) {
+        let now = Instant::now();
+        if !force_render {
+            if let Some(last) = self.last_download_render {
+                if now.saturating_duration_since(last) < Duration::from_millis(100) {
+                    return;
+                }
+            }
+        }
+
+        let new_frozen = self
+            .download_frozen_order
+            .len()
+            .saturating_sub(self.download_frozen_rendered);
+        if new_frozen == 0 && self.download_active_order.is_empty() {
+            return;
+        }
+
+        let term_w = get_terminal_width().unwrap_or(120).max(1);
+        let mut out = String::new();
+        if self.download_active_rendered > 0 {
+            out.push_str(&format!("\x1b[{}A", self.download_active_rendered));
+        }
+
+        for key in self
+            .download_frozen_order
+            .iter()
+            .skip(self.download_frozen_rendered)
+        {
+            if let Some(state) = self.download_state.get(key) {
+                let line = render_download_line(
+                    key,
+                    state.downloaded,
+                    state.total,
+                    state.speed,
+                    term_w,
+                );
+                out.push_str(ANSI_CLEAR_LINE);
+                out.push_str(&line);
+                out.push('\n');
+            }
+        }
+
+        for key in &self.download_active_order {
+            if let Some(state) = self.download_state.get(key) {
+                let line = render_download_line(
+                    key,
+                    state.downloaded,
+                    state.total,
+                    state.speed,
+                    term_w,
+                );
+                out.push_str(ANSI_CLEAR_LINE);
+                out.push_str(&line);
+                out.push('\n');
+            }
+        }
+
+        if !out.is_empty() {
+            print!("{out}");
+            let _ = stdout().lock().flush();
+        }
+
+        self.download_frozen_rendered = self.download_frozen_order.len();
+        self.download_active_rendered = self.download_active_order.len();
+        self.last_download_render = Some(now);
+    }
+
     pub fn on_static_step(&mut self, msg: &str) {
         self.println(msg);
     }
@@ -1011,39 +1102,49 @@ impl TransactionRenderController {
             return;
         }
         let now = Instant::now();
-        let speed = self
-            .last_download
-            .get(package)
-            .map(|(at, bytes)| {
-                let dt = now.saturating_duration_since(*at).as_secs_f64();
-                if dt > 0.0 && downloaded >= *bytes {
-                    (downloaded - *bytes) as f64 / dt
-                } else {
-                    0.0
-                }
-            })
-            .unwrap_or(0.0);
-        self.last_download
-            .insert(package.to_string(), (now, downloaded));
-
-        let line = render_download_line(
-            package,
-            downloaded.min(total),
-            total,
-            speed,
-            get_terminal_width().unwrap_or(120),
-        );
-        write_progress_line(&line);
-        self.active_line = true;
-        if downloaded >= total {
-            let (name, _) = split_download_filename(package);
-            clear_progress_line();
-            self.active_line = false;
-            if package.ends_with(".pkg.tar.zst") || package.ends_with(".pkg.tar.xz") {
-                println!("{} Downloaded {}", ansi_ok(), name);
-            }
-            self.last_download.remove(package);
+        let key = package.to_string();
+        let is_new = !self.download_state.contains_key(&key);
+        if is_new {
+            self.download_active_order.push(key.clone());
         }
+
+        let state = self.download_state.entry(key.clone()).or_insert_with(|| DownloadState {
+            downloaded: 0,
+            total,
+            speed: 0.0,
+            last_at: now,
+            last_bytes: downloaded,
+            frozen: false,
+        });
+
+        let dt = now.saturating_duration_since(state.last_at).as_secs_f64();
+        if dt > 0.0 && downloaded >= state.last_bytes {
+            state.speed = (downloaded - state.last_bytes) as f64 / dt;
+        }
+        state.last_at = now;
+        state.last_bytes = downloaded;
+        state.downloaded = downloaded.min(total);
+        state.total = total;
+
+        let mut force_render = is_new;
+        if downloaded >= total && !state.frozen {
+            state.downloaded = total;
+            state.speed = 0.0;
+            state.frozen = true;
+            if let Some(pos) = self
+                .download_active_order
+                .iter()
+                .position(|k| k == &key)
+            {
+                self.download_active_order.remove(pos);
+            }
+            if !self.download_frozen_order.contains(&key) {
+                self.download_frozen_order.push(key.clone());
+            }
+            force_render = true;
+        }
+
+        self.render_download_block(force_render);
     }
 
     pub fn on_install_progress(
