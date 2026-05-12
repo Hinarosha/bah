@@ -1,7 +1,7 @@
 use crate::args::Args;
 use crate::backend::PackageBackend;
 use crate::config::Config;
-use crate::exec::Status;
+use crate::exec::{self, Status};
 use crate::tx_helper::{
     ensure_sig_interrupt_thread_started, run_plan_with_helper, ActiveCommitGuard,
     CommitInterruptDefer, TransactionPlan,
@@ -17,6 +17,10 @@ pub struct AlpmBackend;
 
 impl PackageBackend for AlpmBackend {
     fn pacman(&self, config: &Config, args: &Args<&str>) -> Result<Status> {
+        if args.op == "sync" && args.has_arg("c", "clean") {
+            // Cache cleaning is not handled by the ALPM backend yet.
+            return exec::pacman(config, args);
+        }
         if config.need_root && !Uid::effective().is_root() {
             let plan = plan_from_args(args, config.no_confirm)?;
             return run_plan_with_helper(config, &plan);
@@ -327,22 +331,13 @@ fn event_cb(event: AnyEvent, c: &mut crate::config::Colors) {
         Event::TransactionStart => Some("Committing transaction...".to_string()),
         Event::HookStart(_) => Some("Running hooks...".to_string()),
         Event::PackageOperationDone(e) => match e.operation() {
-            PackageOperation::Install(newpkg) => Some(format!(
-                "{} Installed {}",
-                c.tx_install.paint("[OK]"),
-                newpkg.name()
-            )),
+            PackageOperation::Install(newpkg) => Some(format!("Installed {}", newpkg.name())),
             PackageOperation::Upgrade(newpkg, oldpkg) => Some(format!(
-                "{} Upgraded {} -> {}",
-                c.tx_install.paint("[OK]"),
+                "Upgraded {} -> {}",
                 oldpkg.version().as_str(),
                 newpkg.version().as_str()
             )),
-            PackageOperation::Remove(oldpkg) => Some(format!(
-                "{} Removed {}",
-                c.tx_install.paint("[OK]"),
-                oldpkg.name()
-            )),
+            PackageOperation::Remove(oldpkg) => Some(format!("Removed {}", oldpkg.name())),
             _ => None,
         },
         _ => None,

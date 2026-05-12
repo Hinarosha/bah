@@ -219,7 +219,8 @@ fn version_plain(old: &str, new: &str) -> String {
 fn version_plain_for_tx(txp: &TxRowPaint) -> String {
     match txp.action {
         TxActionKind::Remove => v_label(&txp.old_ver),
-        _ => version_plain(&txp.old_ver, &txp.new_ver),
+        TxActionKind::Install => v_label(&txp.new_ver),
+        TxActionKind::Upgrade => version_plain(&txp.old_ver, &txp.new_ver),
     }
 }
 
@@ -235,6 +236,13 @@ fn tx_group_title(k: TxRowGroup) -> String {
     match k {
         TxRowGroup::Target => tr!("Target Packages"),
         TxRowGroup::Dependency => tr!("Dependencies"),
+    }
+}
+
+fn tx_source_title(k: TxSourceKind) -> String {
+    match k {
+        TxSourceKind::Aur => tr!("AUR Packages"),
+        TxSourceKind::Repo => tr!("Repo Packages"),
     }
 }
 
@@ -318,7 +326,10 @@ pub fn install_confirmation_bundle<'a>(
                         },
                         &new,
                     );
-                    let ver_plain = version_plain(&old, &new);
+                    let ver_plain = match action {
+                        TxActionKind::Install => v_label(&new),
+                        _ => version_plain(&old, &new),
+                    };
                     rows_out.push(ConfirmationRow {
                         cells: vec![
                             name,
@@ -359,7 +370,10 @@ pub fn install_confirmation_bundle<'a>(
                         },
                         &new,
                     );
-                    let ver_plain = version_plain(&old, &new);
+                    let ver_plain = match action {
+                        TxActionKind::Install => v_label(&new),
+                        _ => version_plain(&old, &new),
+                    };
                     rows_out.push(ConfirmationRow {
                         cells: vec![
                             name,
@@ -423,7 +437,10 @@ pub fn install_confirmation_bundle<'a>(
         if let Some(d) = disk_delta_for_repo_pkg(config, sync_pkg) {
             totals.disk_delta_bytes += d;
         }
-        let ver_plain = version_plain(&old, &new);
+        let ver_plain = match action {
+            TxActionKind::Install => v_label(&new),
+            _ => version_plain(&old, &new),
+        };
         rows_out.push(ConfirmationRow {
             cells: vec![
                 name.to_string(),
@@ -495,6 +512,9 @@ fn paint_version_cell(config: &Config, paint: &TxRowPaint) -> String {
     let c = &config.color;
     if paint.action == TxActionKind::Remove {
         return format!("{}", c.old_version.paint(v_label(&paint.old_ver)));
+    }
+    if paint.action == TxActionKind::Install {
+        return format!("{}", c.new_version.paint(v_label(&paint.new_ver)));
     }
     let o = v_label(&paint.old_ver);
     let n = v_label(&paint.new_ver);
@@ -612,7 +632,7 @@ pub fn print_install_confirmation_table(
         .rows
         .iter()
         .filter_map(|r| r.tx.as_ref())
-        .map(|txp| version_plain(&txp.old_ver, &txp.new_ver).width())
+        .map(|txp| version_plain_for_tx(txp).width())
         .chain(Some(table.headers[1].width()))
         .max()
         .unwrap_or(7);
@@ -715,6 +735,18 @@ pub fn print_install_confirmation_table(
         }
     };
 
+    let has_aur = table
+        .rows
+        .iter()
+        .filter_map(|r| r.tx.as_ref())
+        .any(|txp| txp.source == TxSourceKind::Aur);
+    let has_repo = table
+        .rows
+        .iter()
+        .filter_map(|r| r.tx.as_ref())
+        .any(|txp| txp.source == TxSourceKind::Repo);
+    let use_source_sections = has_aur && has_repo;
+
     if op == TxConfirmOp::Install {
         for group in [TxRowGroup::Target, TxRowGroup::Dependency] {
             let has_group_rows = table
@@ -728,11 +760,53 @@ pub fn print_install_confirmation_table(
                 "{}",
                 paint_section_header(section_separator_line(term_w, &tx_group_title(group)))
             );
+
+            let group_has_aur = table.rows.iter().any(|r| {
+                r.group.is_some_and(|g| g == group)
+                    && r.tx.as_ref().is_some_and(|txp| txp.source == TxSourceKind::Aur)
+            });
+            let group_has_repo = table.rows.iter().any(|r| {
+                r.group.is_some_and(|g| g == group)
+                    && r.tx.as_ref().is_some_and(|txp| txp.source == TxSourceKind::Repo)
+            });
+
+            if use_source_sections && group_has_aur && group_has_repo {
+                for source in [TxSourceKind::Aur, TxSourceKind::Repo] {
+                    println!(
+                        "{}",
+                        paint_section_header(section_separator_line(term_w, &tx_source_title(source)))
+                    );
+                    for row in &table.rows {
+                        let Some(txp) = row.tx.as_ref() else {
+                            continue;
+                        };
+                        if row.group.is_some_and(|g| g == group) && txp.source == source {
+                            render_row(row, txp);
+                        }
+                    }
+                }
+            } else {
+                for row in &table.rows {
+                    let Some(txp) = row.tx.as_ref() else {
+                        continue;
+                    };
+                    if row.group.is_some_and(|g| g == group) {
+                        render_row(row, txp);
+                    }
+                }
+            }
+        }
+    } else if use_source_sections {
+        for source in [TxSourceKind::Aur, TxSourceKind::Repo] {
+            println!(
+                "{}",
+                paint_section_header(section_separator_line(term_w, &tx_source_title(source)))
+            );
             for row in &table.rows {
                 let Some(txp) = row.tx.as_ref() else {
                     continue;
                 };
-                if row.group.is_some_and(|g| g == group) {
+                if txp.source == source {
                     render_row(row, txp);
                 }
             }
@@ -798,7 +872,7 @@ pub fn confirm_transaction(
 }
 
 fn ansi_ok() -> String {
-    format!("{ANSI_GREEN}[OK]{ANSI_RESET}")
+    format!("{ANSI_GREEN}::{ANSI_RESET}")
 }
 
 fn format_speed(bytes_per_sec: f64) -> String {
@@ -962,23 +1036,30 @@ fn render_download_line(
     format!("{} {}", left_part, render_progress_bar(percent, bar_width))
 }
 
-fn render_install_line(package: &str, percent: u64, current: usize, total: usize) -> String {
+fn render_install_line(
+    package: &str,
+    percent: u64,
+    current: usize,
+    total: usize,
+    terminal_width: usize,
+) -> String {
     let percent = percent.min(100);
-    let left = format!("Installing {package} ({current}/{total}) {percent}%");
-    let bar = render_progress_bar(percent, 12);
-    right_align_bar(&left, &bar, get_terminal_width().unwrap_or(120).max(1)).unwrap_or_else(|| {
-        format!("{left} {bar}")
-    })
-}
+    let left = format!(
+        "{ANSI_CYAN}Installing{ANSI_RESET} {ANSI_BOLD}{package}{ANSI_RESET}..."
+    );
+    let right_base = format!("{ANSI_GREY}{current}/{total}{ANSI_RESET} {percent}%");
+    let mut bar_width = PROGRESS_BAR_WIDTH;
 
-fn clear_progress_line() {
-    print!("{ANSI_CLEAR_LINE}");
-    let _ = stdout().lock().flush();
-}
-
-fn write_progress_line(line: &str) {
-    print!("{ANSI_CLEAR_LINE}{line}");
-    let _ = stdout().lock().flush();
+    loop {
+        let right = format!("{right_base} {}", render_progress_bar(percent, bar_width));
+        if let Some(line) = right_align_bar(&left, &right, terminal_width.max(1)) {
+            return line;
+        }
+        if bar_width <= 12 {
+            return format!("{left} {right}");
+        }
+        bar_width = bar_width.saturating_sub(1);
+    }
 }
 
 /// Single-line ANSI transaction renderer.
@@ -989,8 +1070,12 @@ pub struct TransactionRenderController {
     download_active_rendered: usize,
     download_frozen_rendered: usize,
     last_download_render: Option<Instant>,
-    active_line: bool,
-    install_started: bool,
+    install_state: HashMap<String, InstallState>,
+    install_active_order: Vec<String>,
+    install_frozen_order: Vec<String>,
+    install_active_rendered: usize,
+    install_frozen_rendered: usize,
+    last_install_render: Option<Instant>,
 }
 
 #[derive(Debug, Clone)]
@@ -1003,6 +1088,14 @@ struct DownloadState {
     frozen: bool,
 }
 
+#[derive(Debug, Clone)]
+struct InstallState {
+    percent: u64,
+    current: usize,
+    total: usize,
+    frozen: bool,
+}
+
 impl TransactionRenderController {
     pub fn new() -> Self {
         Self {
@@ -1012,16 +1105,16 @@ impl TransactionRenderController {
             download_active_rendered: 0,
             download_frozen_rendered: 0,
             last_download_render: None,
-            active_line: false,
-            install_started: false,
+            install_state: HashMap::new(),
+            install_active_order: Vec::new(),
+            install_frozen_order: Vec::new(),
+            install_active_rendered: 0,
+            install_frozen_rendered: 0,
+            last_install_render: None,
         }
     }
 
     fn println(&mut self, msg: impl AsRef<str>) {
-        if self.active_line {
-            clear_progress_line();
-            self.active_line = false;
-        }
         println!("{}", msg.as_ref());
     }
 
@@ -1093,6 +1186,74 @@ impl TransactionRenderController {
         self.last_download_render = Some(now);
     }
 
+    fn render_install_block(&mut self, force_render: bool) {
+        let now = Instant::now();
+        if !force_render {
+            if let Some(last) = self.last_install_render {
+                if now.saturating_duration_since(last) < Duration::from_millis(100) {
+                    return;
+                }
+            }
+        }
+
+        let new_frozen = self
+            .install_frozen_order
+            .len()
+            .saturating_sub(self.install_frozen_rendered);
+        if new_frozen == 0 && self.install_active_order.is_empty() {
+            return;
+        }
+
+        let term_w = get_terminal_width().unwrap_or(120).max(1);
+        let mut out = String::new();
+        if self.install_active_rendered > 0 {
+            out.push_str(&format!("\x1b[{}A", self.install_active_rendered));
+        }
+
+        for key in self
+            .install_frozen_order
+            .iter()
+            .skip(self.install_frozen_rendered)
+        {
+            if let Some(state) = self.install_state.get(key) {
+                let line = render_install_line(
+                    key,
+                    state.percent,
+                    state.current,
+                    state.total,
+                    term_w,
+                );
+                out.push_str(ANSI_CLEAR_LINE);
+                out.push_str(&line);
+                out.push('\n');
+            }
+        }
+
+        for key in &self.install_active_order {
+            if let Some(state) = self.install_state.get(key) {
+                let line = render_install_line(
+                    key,
+                    state.percent,
+                    state.current,
+                    state.total,
+                    term_w,
+                );
+                out.push_str(ANSI_CLEAR_LINE);
+                out.push_str(&line);
+                out.push('\n');
+            }
+        }
+
+        if !out.is_empty() {
+            print!("{out}");
+            let _ = stdout().lock().flush();
+        }
+
+        self.install_frozen_rendered = self.install_frozen_order.len();
+        self.install_active_rendered = self.install_active_order.len();
+        self.last_install_render = Some(now);
+    }
+
     pub fn on_static_step(&mut self, msg: &str) {
         self.println(msg);
     }
@@ -1154,20 +1315,40 @@ impl TransactionRenderController {
         current: usize,
         total: usize,
     ) {
-        if !self.install_started {
-            if self.active_line {
-                clear_progress_line();
-                self.active_line = false;
+        let key = package.to_string();
+        let is_new = !self.install_state.contains_key(&key);
+        if is_new {
+            self.install_active_order.push(key.clone());
+        }
+
+        let state = self.install_state.entry(key.clone()).or_insert_with(|| InstallState {
+            percent: 0,
+            current,
+            total,
+            frozen: false,
+        });
+
+        state.percent = percent.min(100);
+        state.current = current;
+        state.total = total;
+
+        let mut force_render = is_new;
+        if state.percent >= 100 && !state.frozen {
+            state.frozen = true;
+            if let Some(pos) = self
+                .install_active_order
+                .iter()
+                .position(|k| k == &key)
+            {
+                self.install_active_order.remove(pos);
             }
-            self.install_started = true;
+            if !self.install_frozen_order.contains(&key) {
+                self.install_frozen_order.push(key.clone());
+            }
+            force_render = true;
         }
-        let line = render_install_line(package, percent, current, total);
-        write_progress_line(&line);
-        self.active_line = true;
-        if percent >= 100 {
-            clear_progress_line();
-            self.active_line = false;
-        }
+
+        self.render_install_block(force_render);
     }
 
     pub fn on_log_line(&mut self, msg: &str) {
@@ -1197,10 +1378,6 @@ impl TransactionRenderController {
     }
 
     pub fn finish(&mut self) {
-        if self.active_line {
-            clear_progress_line();
-            self.active_line = false;
-        }
     }
 }
 

@@ -1502,32 +1502,39 @@ fn helper_event_cb(event: AnyEvent, c: &mut Colors) {
             None
         }
         ResolveDepsStart => Some(format!(
-            "{} Resolving dependencies...",
-            c.tx_install.paint("[OK]")
+            "{} {}",
+            c.action.paint("::"),
+            c.bold.paint("Resolving dependencies...")
         )),
         InterConflictsStart => Some(format!(
-            "{} Checking conflicts...",
-            c.tx_install.paint("[OK]")
+            "{} {}",
+            c.action.paint("::"),
+            c.bold.paint("Checking conflicts...")
         )),
         IntegrityStart => Some(format!(
-            "{} Checking integrity...",
-            c.tx_install.paint("[OK]")
+            "{} {}",
+            c.action.paint("::"),
+            c.bold.paint("Checking integrity...")
         )),
         LoadStart => Some(format!(
-            "{} Loading package files...",
-            c.tx_install.paint("[OK]")
+            "{} {}",
+            c.action.paint("::"),
+            c.bold.paint("Loading package files...")
         )),
         KeyringStart => Some(format!(
-            "{} Checking keyring...",
-            c.tx_install.paint("[OK]")
+            "{} {}",
+            c.action.paint("::"),
+            c.bold.paint("Checking keyring...")
         )),
         DiskSpaceStart => Some(format!(
-            "{} Checking disk space...",
-            c.tx_install.paint("[OK]")
+            "{} {}",
+            c.action.paint("::"),
+            c.bold.paint("Checking disk space...")
         )),
         TransactionStart => Some(format!(
-            "{} Committing transaction...",
-            c.bold.paint("[..]")
+            "{} {}",
+            c.action.paint("::"),
+            c.bold.paint("Committing transaction...")
         )),
         HookStart(he) => {
             if he.when() == HookWhen::PostTransaction {
@@ -1544,20 +1551,23 @@ fn helper_event_cb(event: AnyEvent, c: &mut Colors) {
         HookRunStart(_h) => None,
         Event::PackageOperationDone(e) => match e.operation() {
             PackageOperation::Install(newpkg) => Some(format!(
-                "{} Installed {}",
-                c.tx_install.paint("[OK]"),
-                newpkg.name()
+                "{} {}",
+                c.action.paint("::"),
+                c.bold.paint(format!("Installed {}", newpkg.name()))
             )),
             PackageOperation::Upgrade(newpkg, oldpkg) => Some(format!(
-                "{} Upgraded {} -> {}",
-                c.tx_install.paint("[OK]"),
-                oldpkg.version().as_str(),
-                newpkg.version().as_str()
+                "{} {}",
+                c.action.paint("::"),
+                c.bold.paint(format!(
+                    "Upgraded {} -> {}",
+                    oldpkg.version().as_str(),
+                    newpkg.version().as_str()
+                ))
             )),
             PackageOperation::Remove(oldpkg) => Some(format!(
-                "{} Removed {}",
-                c.tx_install.paint("[OK]"),
-                oldpkg.name()
+                "{} {}",
+                c.action.paint("::"),
+                c.bold.paint(format!("Removed {}", oldpkg.name()))
             )),
             _ => None,
         },
