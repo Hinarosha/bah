@@ -22,31 +22,65 @@ use tr::tr;
 
 pub static DEFAULT_SIGNALS: LazyLock<Arc<AtomicBool>> = LazyLock::new(|| {
     let arc = Arc::new(AtomicBool::new(true));
-    signal_flag::register_conditional_default(SIGTERM, Arc::clone(&arc)).unwrap();
-    signal_flag::register_conditional_default(SIGINT, Arc::clone(&arc)).unwrap();
-    signal_flag::register_conditional_default(SIGQUIT, Arc::clone(&arc)).unwrap();
+    // CRITICAL: Signal registration failures are non-recoverable - exit immediately
+    // These unwrap() calls are safe because signal registration only fails for:
+    // - Invalid signal numbers (impossible with consts)
+    // - Handler installation errors (extremely rare, indicates broken system)
+    if signal_flag::register_conditional_default(SIGTERM, Arc::clone(&arc)).is_err() {
+        eprintln!("error: failed to register SIGTERM handler");
+        std::process::exit(128 + SIGTERM as i32);
+    }
+    if signal_flag::register_conditional_default(SIGINT, Arc::clone(&arc)).is_err() {
+        eprintln!("error: failed to register SIGINT handler");
+        std::process::exit(128 + SIGINT as i32);
+    }
+    if signal_flag::register_conditional_default(SIGQUIT, Arc::clone(&arc)).is_err() {
+        eprintln!("error: failed to register SIGQUIT handler");
+        std::process::exit(128 + SIGQUIT as i32);
+    }
     arc
 });
 
 static CAUGHT_SIGNAL: LazyLock<Arc<AtomicUsize>> = LazyLock::new(|| {
     let arc = Arc::new(AtomicUsize::new(0));
-    signal_flag::register_usize(SIGTERM, Arc::clone(&arc), SIGTERM as usize).unwrap();
-    signal_flag::register_usize(SIGINT, Arc::clone(&arc), SIGINT as usize).unwrap();
-    signal_flag::register_usize(SIGQUIT, Arc::clone(&arc), SIGQUIT as usize).unwrap();
+    if signal_flag::register_usize(SIGTERM, Arc::clone(&arc), SIGTERM as usize).is_err() {
+        eprintln!("error: failed to register SIGTERM counter");
+        std::process::exit(128 + SIGTERM as i32);
+    }
+    if signal_flag::register_usize(SIGINT, Arc::clone(&arc), SIGINT as usize).is_err() {
+        eprintln!("error: failed to register SIGINT counter");
+        std::process::exit(128 + SIGINT as i32);
+    }
+    if signal_flag::register_usize(SIGQUIT, Arc::clone(&arc), SIGQUIT as usize).is_err() {
+        eprintln!("error: failed to register SIGQUIT counter");
+        std::process::exit(128 + SIGQUIT as i32);
+    }
     arc
 });
 
 pub static INTERRUPTED: LazyLock<Arc<AtomicBool>> = LazyLock::new(|| {
     let arc = Arc::new(AtomicBool::new(false));
-    signal_flag::register(SIGTERM, Arc::clone(&arc)).unwrap();
-    signal_flag::register(SIGINT, Arc::clone(&arc)).unwrap();
-    signal_flag::register(SIGQUIT, Arc::clone(&arc)).unwrap();
+    if signal_flag::register(SIGTERM, Arc::clone(&arc)).is_err() {
+        eprintln!("error: failed to register SIGTERM interrupt flag");
+        std::process::exit(128 + SIGTERM as i32);
+    }
+    if signal_flag::register(SIGINT, Arc::clone(&arc)).is_err() {
+        eprintln!("error: failed to register SIGINT interrupt flag");
+        std::process::exit(128 + SIGINT as i32);
+    }
+    if signal_flag::register(SIGQUIT, Arc::clone(&arc)).is_err() {
+        eprintln!("error: failed to register SIGQUIT interrupt flag");
+        std::process::exit(128 + SIGQUIT as i32);
+    }
     arc
 });
 
 pub static RAISE_SIGPIPE: LazyLock<Arc<AtomicBool>> = LazyLock::new(|| {
     let arc = Arc::new(AtomicBool::new(true));
-    signal_flag::register_conditional_default(SIGPIPE, Arc::clone(&arc)).unwrap();
+    if signal_flag::register_conditional_default(SIGPIPE, Arc::clone(&arc)).is_err() {
+        eprintln!("error: failed to register SIGPIPE handler");
+        std::process::exit(128 + SIGPIPE as i32);
+    }
     arc
 });
 

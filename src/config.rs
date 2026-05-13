@@ -1217,7 +1217,21 @@ fn question(question: AnyQuestion, (no_confirm, c): &mut (bool, Colors)) {
 
             let mut db = String::new();
             for (n, pkg) in providers.iter().enumerate() {
-                let pkg_db = pkg.db().unwrap();
+                // CRITICAL #10 FIX: Handle pkg.db() returning None gracefully
+                // This can happen for packages from custom repos or during special transactions
+                let pkg_db = match pkg.db() {
+                    Some(db) => db,
+                    None => {
+                        // Skip packages without DB association - they shouldn't appear in provider lists normally
+                        // but we handle it defensively to avoid panics
+                        eprintln!(
+                            "{} {}",
+                            c.warning.paint("::"),
+                            tr!("package '{}' has no associated database (skipping)", pkg.name())
+                        );
+                        continue;
+                    }
+                };
                 if pkg_db.name() != db {
                     db = pkg_db.name().to_string();
                     println!(

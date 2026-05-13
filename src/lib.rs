@@ -93,12 +93,18 @@ fn print_error(color: Style, err: Error) {
 
     let mut iter = err.chain().peekable();
 
-    if <dyn StdError>::is::<exec::Status>(*iter.peek().unwrap()) {
-        eprint!("{}", iter.peek().unwrap());
+    // HIGH FIX: Handle empty error chain gracefully (shouldn't happen but be defensive)
+    let Some(first) = iter.peek() else {
+        eprintln!("{} unknown error (empty error chain)", color.paint(tr!("error:")));
+        return;
+    };
+
+    if <dyn StdError>::is::<exec::Status>(*first) {
+        eprint!("{}", first);
         return;
     }
 
-    if <dyn StdError>::is::<install::Status>(*iter.peek().unwrap()) {
+    if <dyn StdError>::is::<install::Status>(*first) {
         return;
     }
 
