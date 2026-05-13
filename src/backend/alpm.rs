@@ -3,8 +3,8 @@ use crate::backend::PackageBackend;
 use crate::config::Config;
 use crate::exec::{self, Status};
 use crate::tx_helper::{
-    ensure_sig_interrupt_thread_started, run_plan_with_helper, ActiveCommitGuard,
-    CommitInterruptDefer, TransactionPlan,
+    ensure_boot_rw_for_transaction, ensure_noscriptlet_allowed, ensure_sig_interrupt_thread_started,
+    run_plan_with_helper, ActiveCommitGuard, CommitInterruptDefer, TransactionPlan,
 };
 
 use alpm::{AnyEvent, Event, PackageOperation, Progress, SigLevel, TransFlag};
@@ -70,6 +70,8 @@ impl AlpmBackend {
             }
 
             ensure_sig_interrupt_thread_started();
+            ensure_noscriptlet_allowed(&alpm, config)?;
+            ensure_boot_rw_for_transaction(&alpm, config)?;
             let commit_err = {
                 let _defer_int = CommitInterruptDefer::new();
                 let _guard = ActiveCommitGuard::arm(&alpm);
@@ -108,6 +110,8 @@ impl AlpmBackend {
             }
 
             ensure_sig_interrupt_thread_started();
+            ensure_noscriptlet_allowed(&alpm, config)?;
+            ensure_boot_rw_for_transaction(&alpm, config)?;
             let commit_err = {
                 let _defer_int = CommitInterruptDefer::new();
                 let _guard = ActiveCommitGuard::arm(&alpm);
@@ -147,6 +151,8 @@ impl AlpmBackend {
             }
 
             ensure_sig_interrupt_thread_started();
+            ensure_noscriptlet_allowed(&alpm, config)?;
+            ensure_boot_rw_for_transaction(&alpm, config)?;
             let commit_err = {
                 let _defer_int = CommitInterruptDefer::new();
                 let _guard = ActiveCommitGuard::arm(&alpm);

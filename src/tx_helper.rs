@@ -2,7 +2,7 @@ use crate::config::{Colors, Config};
 use crate::exec::Status;
 use crate::fmt::truncate_to_width;
 use crate::ui::TransactionRenderController;
-use crate::util::ask;
+use crate::util::{ask, collect_critical_pkgs};
 
 use alpm::{
     AnyDownloadEvent, AnyEvent, AnyQuestion, CommitError, DownloadEvent, DownloadResult,
@@ -26,9 +26,11 @@ use nix::unistd::{faccessat, AccessFlags};
 use serde::{Deserialize, Serialize};
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
+use std::collections::HashSet;
 use std::fs::{read_to_string, remove_file, File};
 use std::io::{BufRead, BufReader, ErrorKind, Write};
 use std::path::{Component, Path, PathBuf};
+use std::os::fd::{AsFd, OwnedFd};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use std::sync::{
@@ -206,6 +208,116 @@ fn boot_mountinfo_summary(boot: &Path) -> String {
         let joined = hits.join(" | ");
         truncate_to_width(&joined, 900)
     }
+}
+
+#[cfg(target_os = "linux")]
+fn boot_mount_candidates_from_fstab(root: &Path) -> Vec<PathBuf> {
+    let fstab = root.join("etc/fstab");
+    let data = match read_to_string(&fstab) {
+        Ok(data) => data,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut out = Vec::new();
+    for line in data.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut parts = line.split_whitespace();
+        let _spec = parts.next();
+        let mount = match parts.next() {
+            Some(mount) => mount,
+            None => continue,
+        };
+        if mount == "/boot" || mount == "/boot/efi" || mount == "/efi" {
+            out.push(PathBuf::from(mount));
+        }
+    }
+
+    out
+}
+
+#[cfg(target_os = "linux")]
+fn mountinfo_mount_points() -> HashSet<String> {
+    let mut out = HashSet::new();
+    let file = match File::open("/proc/self/mountinfo") {
+        Ok(file) => file,
+        Err(_) => return out,
+    };
+    let reader = BufReader::new(file);
+    for line in reader.lines().flatten() {
+        if let Some(mount) = mountinfo_mount_point(&line) {
+            out.insert(mount);
+        }
+    }
+    out
+}
+
+#[cfg(target_os = "linux")]
+fn select_boot_mountpoint(root: &Path) -> Result<PathBuf> {
+    const CANDIDATES: [&str; 3] = ["/boot", "/boot/efi", "/efi"];
+
+    let expected = boot_mount_candidates_from_fstab(root);
+    let mounted = mountinfo_mount_points();
+
+    if !expected.is_empty() {
+        for candidate in CANDIDATES {
+            if expected.iter().any(|p| p == Path::new(candidate))
+                && mounted.contains(candidate)
+            {
+                return Ok(PathBuf::from(candidate));
+            }
+        }
+        let list = expected
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        bail!(
+            "expected boot/EFI mountpoint(s) from /etc/fstab not mounted: {}. Mount them before updating kernel, initramfs, or bootloader.",
+            list
+        );
+    }
+
+    for candidate in CANDIDATES {
+        if mounted.contains(candidate) {
+            return Ok(PathBuf::from(candidate));
+        }
+    }
+
+    Ok(PathBuf::from("/boot"))
+}
+
+#[cfg(target_os = "linux")]
+fn openat_dir_no_symlinks<Fd: AsFd>(root_fd: Fd, rel: &Path) -> Result<OwnedFd> {
+    let mut current_fd: Option<OwnedFd> = None;
+    let borrowed_root = root_fd.as_fd();
+
+    for comp in rel.components() {
+        match comp {
+            Component::Normal(name) => {
+                let fd_to_use = current_fd.as_ref().map(|f| f.as_fd()).unwrap_or(borrowed_root);
+                let next = openat(
+                    fd_to_use,
+                    name,
+                    OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC,
+                    Mode::empty(),
+                )?;
+                current_fd = Some(next);
+            }
+            Component::CurDir => (),
+            Component::RootDir => (),
+            Component::ParentDir => {
+                return Err(anyhow!("invalid boot mountpoint path (parent dir)"));
+            }
+            _ => {
+                return Err(anyhow!("invalid boot mountpoint path"));
+            }
+        }
+    }
+
+    current_fd.ok_or_else(|| anyhow!("invalid boot mountpoint path (empty)"))
 }
 
 /// Wraps `trans_commit`: defers Ctrl+C interrupt requests until commit returns so scriptlets are not killed mid-write.
@@ -860,6 +972,15 @@ fn transaction_touches_boot_sensitive_pkg(alpm: &alpm::Alpm) -> bool {
             .any(|p| pkg_requires_writable_boot(p.name()))
 }
 
+fn transaction_critical_pkgs(alpm: &alpm::Alpm) -> Vec<String> {
+    let names = alpm
+        .trans_add()
+        .iter()
+        .map(|p| p.name())
+        .chain(alpm.trans_remove().iter().map(|p| p.name()));
+    collect_critical_pkgs(names)
+}
+
 fn ensure_transaction_not_empty(alpm: &mut alpm::Alpm) -> Result<()> {
     if alpm.trans_add().is_empty() && alpm.trans_remove().is_empty() {
         let _ = alpm.trans_release();
@@ -875,12 +996,16 @@ fn sync_allows_empty_transaction(refresh_count: u8, sysupgrade_count: u8) -> boo
 }
 
 #[cfg(target_os = "linux")]
-fn ensure_boot_rw_for_transaction(alpm: &alpm::Alpm) -> Result<()> {
+pub(crate) fn ensure_boot_rw_for_transaction(alpm: &alpm::Alpm, config: &Config) -> Result<()> {
     if !transaction_touches_boot_sensitive_pkg(alpm) {
         bah_audit_log("ensure_boot_rw: skipped (no boot-sensitive packages in transaction)");
         return Ok(());
     }
-    let boot: PathBuf = Path::new(alpm.root()).join("boot");
+    let boot_mount = select_boot_mountpoint(Path::new(alpm.root()))?;
+    let boot_rel = boot_mount
+        .strip_prefix("/")
+        .unwrap_or(boot_mount.as_path());
+    let boot: PathBuf = Path::new(alpm.root()).join(boot_rel);
     bah_audit_log(&format!(
         "ensure_boot_rw: begin alpm.root={} boot_path={}",
         alpm.root(),
@@ -905,12 +1030,7 @@ fn ensure_boot_rw_for_transaction(alpm: &alpm::Alpm) -> Result<()> {
         )
     })?;
 
-    let boot_fd = openat(
-        &root_fd,
-        "boot",
-        OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC,
-        Mode::empty(),
-    )
+    let boot_fd = openat_dir_no_symlinks(root_fd, boot_rel)
     .map_err(|e| {
         bah_audit_log(&format!(
             "ensure_boot_rw: FAIL open boot under root ({}) err={e}",
@@ -976,29 +1096,48 @@ fn ensure_boot_rw_for_transaction(alpm: &alpm::Alpm) -> Result<()> {
     let fr = vfs.fragment_size() as u64;
     let avail = vfs.blocks_available() as u64;
     let avail_bytes = avail.saturating_mul(fr);
-    const MIN_BOOT_FREE: u64 = 8 * 1024 * 1024;
+    let min_boot_free = config.boot_min_free_mb.saturating_mul(1024 * 1024);
     bah_audit_log(&format!(
-        "ensure_boot_rw: statvfs avail_bytes={avail_bytes} (min_hint={MIN_BOOT_FREE})"
+        "ensure_boot_rw: statvfs avail_bytes={avail_bytes} (min_hint={min_boot_free})"
     ));
-    if avail_bytes < MIN_BOOT_FREE {
+    if min_boot_free > 0 && avail_bytes < min_boot_free {
         bah_audit_log(&format!(
             "ensure_boot_rw: FAIL low free space on {}",
             boot.display()
         ));
         bail!(
-            "{} has critically low free space ({} bytes free; need at least ~{} MiB for kernel/initramfs hooks). Free space before upgrading.",
+            "{} has critically low free space ({} bytes free; need at least ~{} MB for kernel/initramfs hooks). Free space before upgrading.",
             boot.display(),
             avail_bytes,
-            MIN_BOOT_FREE / (1024 * 1024)
+            min_boot_free / (1024 * 1024)
         );
     }
 
     bah_audit_log(&format!("ensure_boot_rw: OK {}", boot.display()));
+    // root_fd and boot_fd are OwnedFd - auto-close on drop
     Ok(())
 }
 
+pub(crate) fn ensure_noscriptlet_allowed(alpm: &alpm::Alpm, config: &Config) -> Result<()> {
+    if !config.args.has_arg("noscriptlet", "noscriptlet") {
+        return Ok(());
+    }
+    if config.force_noscriptlet {
+        return Ok(());
+    }
+    let critical = transaction_critical_pkgs(alpm);
+    if critical.is_empty() {
+        return Ok(());
+    }
+
+    bail!(
+        "--noscriptlet cannot be used with critical system packages ({}).\n       Post-install scriptlets are required for these packages to function correctly.",
+        critical.join(", ")
+    );
+}
+
 #[cfg(not(target_os = "linux"))]
-fn ensure_boot_rw_for_transaction(_alpm: &alpm::Alpm) -> Result<()> {
+pub(crate) fn ensure_boot_rw_for_transaction(_alpm: &alpm::Alpm, _config: &Config) -> Result<()> {
     Ok(())
 }
 
@@ -1176,7 +1315,11 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
 
             if !*print_only {
                 ensure_sig_interrupt_thread_started();
-                if let Err(e) = ensure_boot_rw_for_transaction(&alpm) {
+                if let Err(e) = ensure_noscriptlet_allowed(&alpm, config) {
+                    let _ = alpm.trans_release();
+                    return Err(e);
+                }
+                if let Err(e) = ensure_boot_rw_for_transaction(&alpm, config) {
                     let _ = alpm.trans_release();
                     return Err(e);
                 }
@@ -1261,7 +1404,11 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
 
             if !*print_only {
                 ensure_sig_interrupt_thread_started();
-                if let Err(e) = ensure_boot_rw_for_transaction(&alpm) {
+                if let Err(e) = ensure_noscriptlet_allowed(&alpm, config) {
+                    let _ = alpm.trans_release();
+                    return Err(e);
+                }
+                if let Err(e) = ensure_boot_rw_for_transaction(&alpm, config) {
                     let _ = alpm.trans_release();
                     return Err(e);
                 }
@@ -1339,7 +1486,11 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
 
             if !*print_only {
                 ensure_sig_interrupt_thread_started();
-                if let Err(e) = ensure_boot_rw_for_transaction(&alpm) {
+                if let Err(e) = ensure_noscriptlet_allowed(&alpm, config) {
+                    let _ = alpm.trans_release();
+                    return Err(e);
+                }
+                if let Err(e) = ensure_boot_rw_for_transaction(&alpm, config) {
                     let _ = alpm.trans_release();
                     return Err(e);
                 }
@@ -1494,6 +1645,13 @@ fn helper_event_cb(event: AnyEvent, c: &mut Colors) {
             None
         }
         HookRunDone(h) => {
+            bah_audit_log(&format!(
+                "hook run done name={} desc={} pos={}/{}",
+                h.name(),
+                h.desc().unwrap_or(h.name()),
+                h.position(),
+                h.total()
+            ));
             let _ = emit(&HelperToParent::HookStep {
                 current: h.position(),
                 total: h.total(),
@@ -1537,18 +1695,27 @@ fn helper_event_cb(event: AnyEvent, c: &mut Colors) {
             c.bold.paint("Committing transaction...")
         )),
         HookStart(he) => {
+            bah_audit_log(&format!("hook phase start when={:?}", he.when()));
             if he.when() == HookWhen::PostTransaction {
                 let _ = emit(&HelperToParent::HookPhaseStart);
             }
             None
         }
         HookDone(he) => {
+            bah_audit_log(&format!("hook phase done when={:?}", he.when()));
             if he.when() == HookWhen::PostTransaction {
                 let _ = emit(&HelperToParent::HookPhaseDone);
             }
             None
         }
-        HookRunStart(_h) => None,
+        HookRunStart(h) => {
+            bah_audit_log(&format!(
+                "hook run start name={} desc={}",
+                h.name(),
+                h.desc().unwrap_or(h.name())
+            ));
+            None
+        }
         Event::PackageOperationDone(e) => match e.operation() {
             PackageOperation::Install(newpkg) => Some(format!(
                 "{} {}",

@@ -260,6 +260,7 @@ impl Config {
             Arg::Long("review") => self.skip_review = false,
             Arg::Long("gendb") => self.gendb = true,
             Arg::Long("nocheck") => self.no_check = true,
+            Arg::Long("force-noscriptlet") => self.force_noscriptlet = true,
             Arg::Long("devel") => self.devel = true,
             Arg::Long("nodevel") => self.devel = false,
             Arg::Long("provides") => {

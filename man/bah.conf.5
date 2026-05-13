@@ -230,6 +230,11 @@ cache to be refreshed every time, while setting this to -1 will cause the cache
 to never be refreshed. Defaults to 7.
 
 .TP
+.B BootMinFree = N
+Minimum free space in MB required on the boot/EFI mount before kernel or
+bootloader updates proceed. Defaults to 100.
+
+.TP
 .B PacmanConf = path/to/pacman.conf
 The pacman config file to use.
 

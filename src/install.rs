@@ -24,7 +24,7 @@ use crate::pkgbuild::PkgbuildRepo;
 use crate::resolver::{flags, resolver};
 use crate::tx_helper::{run_plan_with_helper, TransactionPlan};
 use crate::upgrade::{get_upgrades, Upgrades};
-use crate::util::{ask, repo_aur_pkgs, split_repo_aur_targets};
+use crate::util::{ask, collect_critical_pkgs, repo_aur_pkgs, split_repo_aur_targets};
 use crate::{args, exec, news, print_error, printtr, repo};
 
 use alpm::{Alpm, Depend, PackageReason, Version};
@@ -1084,6 +1084,25 @@ impl Installer {
             return Ok(());
         }
 
+        let action_names = action_pkg_names(actions);
+        let critical_pkgs = collect_critical_pkgs(action_names.iter().map(|s| s.as_str()));
+        if !critical_pkgs.is_empty() {
+            crate::ui::print_critical_pkg_warning(&critical_pkgs);
+        }
+        if config.args.has_arg("noscriptlet", "noscriptlet")
+            && !config.force_noscriptlet
+            && !critical_pkgs.is_empty()
+        {
+            bail!(
+                "--noscriptlet cannot be used with critical system packages ({}).\n       Post-install scriptlets are required for these packages to function correctly.",
+                critical_pkgs.join(", ")
+            );
+        }
+        if self.sysupgrade == 0 {
+            let tx_names = action_names.iter().cloned().collect();
+            warn_partial_upgrade(config, actions, &tx_names);
+        }
+
         let Some((table, totals)) =
             crate::ui::install_confirmation_bundle(config, actions, &self.upgrades.devel)
         else {
@@ -1324,6 +1343,77 @@ fn print_warnings(config: &Config, cache: &Cache, actions: Option<&Actions>) {
     warnings.orphans.dedup();
 
     warnings.all(config.color, config.cols);
+}
+
+fn action_pkg_names(actions: &Actions) -> Vec<String> {
+    let mut names = Vec::new();
+
+    for pkg in &actions.install {
+        names.push(pkg.pkg.name().to_string());
+    }
+
+    for base in &actions.build {
+        match base {
+            Base::Aur(base) => {
+                for pkg in &base.pkgs {
+                    names.push(pkg.pkg.name.clone());
+                }
+            }
+            Base::Pkgbuild(base) => {
+                for pkg in &base.pkgs {
+                    names.push(pkg.pkg.pkgname.clone());
+                }
+            }
+        }
+    }
+
+    names
+}
+
+fn warn_partial_upgrade(
+    config: &Config,
+    actions: &Actions,
+    tx_names: &HashSet<String>,
+) {
+    let db = config.alpm.localdb();
+    let mut lines = Vec::new();
+
+    for pkg in actions.install.iter().filter(|p| p.target) {
+        for dep in pkg.pkg.depends() {
+            let dep_str = dep.to_string();
+            let (name, req) = match dep_str.split_once(is_ver_char) {
+                Some((name, req)) => (name, req),
+                None => continue,
+            };
+            if tx_names.contains(name) {
+                continue;
+            }
+            let Ok(local) = db.pkg(name) else {
+                continue;
+            };
+            if db.pkgs().find_satisfier(dep_str.as_str()).is_some() {
+                continue;
+            }
+            lines.push(format!(
+                "   {name} requires version {req} but {installed} is installed and not in this transaction.",
+                name = name,
+                req = req,
+                installed = local.version()
+            ));
+        }
+    }
+
+    if lines.is_empty() {
+        return;
+    }
+
+    let mut warn_lines = Vec::new();
+    warn_lines.push(":: Warning: Partial upgrade detected.".to_string());
+    warn_lines.extend(lines);
+    warn_lines.push(
+        "   Run 'bah update' first to perform a full system upgrade.".to_string(),
+    );
+    crate::ui::print_warning_block(&warn_lines);
 }
 
 fn fmt_stack(want: &DepMissing) -> String {

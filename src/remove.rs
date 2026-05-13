@@ -4,12 +4,12 @@ use crate::print_error;
 use crate::repo;
 use crate::search::interactive_search_local;
 use crate::ui::{confirm_transaction, remove_confirmation_bundle, TxConfirmOp};
-use crate::util::pkg_base_or_name;
+use crate::util::{collect_critical_pkgs, pkg_base_or_name};
 use crate::Config;
 
 use std::collections::HashMap;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 
 pub fn remove(config: &mut Config) -> Result<i32> {
     if config.interactive {
@@ -36,6 +36,20 @@ pub fn remove(config: &mut Config) -> Result<i32> {
                     .push(pkg.name().to_string());
             }
         }
+    }
+
+    let critical_pkgs = collect_critical_pkgs(config.targets.iter().map(|s| s.as_str()));
+    if !critical_pkgs.is_empty() {
+        crate::ui::print_critical_pkg_warning(&critical_pkgs);
+    }
+    if config.args.has_arg("noscriptlet", "noscriptlet")
+        && !config.force_noscriptlet
+        && !critical_pkgs.is_empty()
+    {
+        bail!(
+            "--noscriptlet cannot be used with critical system packages ({}).\n       Post-install scriptlets are required for these packages to function correctly.",
+            critical_pkgs.join(", ")
+        );
     }
 
     if let Some((table, totals)) = remove_confirmation_bundle(config, &config.targets) {

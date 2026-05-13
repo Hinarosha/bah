@@ -451,6 +451,9 @@ pub struct Config {
     #[default = 7]
     pub completion_interval: u64,
 
+    #[default = 100]
+    pub boot_min_free_mb: u64,
+
     pub help: bool,
     pub version: bool,
     pub helper_transaction: bool,
@@ -458,6 +461,7 @@ pub struct Config {
     pub skip_review: bool,
     pub no_check: bool,
     pub no_confirm: bool,
+    pub force_noscriptlet: bool,
     pub devel: bool,
     pub clean_after: bool,
     #[default(YesNoAll::No)]
@@ -1136,6 +1140,7 @@ then initialise it with:
             "SearchBy" => self.search_by = ConfigEnum::from_str(key, value?.as_str())?,
             "Limit" => self.limit = value?.parse()?,
             "CompletionInterval" => self.completion_interval = value?.parse()?,
+            "BootMinFree" => self.boot_min_free_mb = value?.parse()?,
             "PacmanConf" => self.pacman_conf = Some(value?),
             "MakepkgConf" => self.makepkg_conf = Some(value?),
             "DevelSuffixes" => {

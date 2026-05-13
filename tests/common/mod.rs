@@ -138,36 +138,39 @@ async fn run(run_args: &[&str], repo: bool) -> Result<(TempDir, i32)> {
     path.push(':');
     path.push_str(testdata.join("bin").to_str().unwrap());
 
-    std::env::set_var("PACMAN", "true");
-    std::env::set_var("PACMAN_CONF", dir.join("pacman.conf"));
-    std::env::set_var("DBPATH", dir.join("db"));
-    std::env::set_var("bah_CONF", testdata.join("bah.conf"));
-    std::env::set_var("PATH", path);
+    // Safety: test harness controls environment; no concurrent threads access env
+    unsafe {
+        std::env::set_var("PACMAN", "true");
+        std::env::set_var("PACMAN_CONF", dir.join("pacman.conf"));
+        std::env::set_var("DBPATH", dir.join("db"));
+        std::env::set_var("bah_CONF", testdata.join("bah.conf"));
+        std::env::set_var("PATH", path);
 
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_CHECKDEPENDS_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_VARIABLE_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_PKGVER_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_ARCH_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_MAKEDEPENDS_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_PACKAGE_FUNCTION_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_SOURCE_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_OPTIONS_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_PROVIDES_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_OPTDEPENDS_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_CHANGELOG_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_INSTALL_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_PKGBASE_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_FULLPKGVER_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_PKGREL_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_EPOCH_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_BACKUP_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_PKGNAME_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_PKGLIST_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_UTIL_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_PACKAGE_FUNCTION_VARIABLE_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_DEPENDS_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_CONFLICTS_SH", "1");
-    std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_ARCH_SPECIFIC_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_CHECKDEPENDS_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_VARIABLE_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_PKGVER_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_ARCH_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_MAKEDEPENDS_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_PACKAGE_FUNCTION_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_SOURCE_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_OPTIONS_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_PROVIDES_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_OPTDEPENDS_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_CHANGELOG_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_INSTALL_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_PKGBASE_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_FULLPKGVER_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_PKGREL_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_EPOCH_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_BACKUP_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_PKGNAME_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_PKGLIST_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_UTIL_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_PACKAGE_FUNCTION_VARIABLE_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_DEPENDS_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_CONFLICTS_SH", "1");
+        std::env::set_var("LIBMAKEPKG_LINT_PKGBUILD_ARCH_SPECIFIC_SH", "1");
+    }
 
     if repo {
         let mut args = args.clone();

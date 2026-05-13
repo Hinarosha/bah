@@ -2,7 +2,7 @@ use crate::config::{Config, LocalRepos};
 use crate::repo;
 
 use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fs::File;
 use std::io::{stderr, stdin, stdout, BufRead, Write};
 use std::mem::take;
@@ -22,6 +22,49 @@ pub struct NumberMenu<'a> {
     pub ex_range: Vec<Range<usize>>,
     pub in_word: Vec<&'a str>,
     pub ex_word: Vec<&'a str>,
+}
+
+pub const CRITICAL_PKG_NAMES: &[&str] = &[
+    "linux",
+    "linux-lts",
+    "linux-zen",
+    "linux-hardened",
+    "linux-headers",
+    "glibc",
+    "systemd",
+    "systemd-libs",
+    "grub",
+    "mkinitcpio",
+    "bash",
+    "filesystem",
+    "pacman",
+    "util-linux",
+];
+
+pub fn is_critical_pkg(name: &str) -> bool {
+    CRITICAL_PKG_NAMES.iter().any(|pkg| *pkg == name)
+}
+
+pub fn collect_critical_pkgs<I, S>(names: I) -> Vec<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+
+    for name in names {
+        let name = name.as_ref();
+        if !is_critical_pkg(name) {
+            continue;
+        }
+        let name = name.to_string();
+        if seen.insert(name.clone()) {
+            out.push(name);
+        }
+    }
+
+    out
 }
 
 pub fn pkg_base_or_name(pkg: &Package) -> &str {

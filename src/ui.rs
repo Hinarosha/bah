@@ -871,6 +871,30 @@ pub fn confirm_transaction(
     ask(config, tx_confirm_prompt(op), true)
 }
 
+pub fn print_warning_block(lines: &[String]) {
+    if lines.is_empty() {
+        return;
+    }
+    for line in lines {
+        println!("{ANSI_YELLOW}{line}{ANSI_RESET}");
+    }
+    println!();
+}
+
+pub fn print_critical_pkg_warning(pkgs: &[String]) {
+    if pkgs.is_empty() {
+        return;
+    }
+    let list = pkgs.join(", ");
+    let lines = vec![
+        ":: Warning: This transaction includes critical system packages:".to_string(),
+        format!("   {list}"),
+        "   Interrupting this operation may leave your system unbootable.".to_string(),
+        "   Ensure /boot is mounted before proceeding.".to_string(),
+    ];
+    print_warning_block(&lines);
+}
+
 fn ansi_ok() -> String {
     format!("{ANSI_GREEN}::{ANSI_RESET}")
 }
@@ -1460,7 +1484,7 @@ mod tests {
     #[test]
     fn progress_bar_body_never_exceeds_fixed_width() {
         for percent in [0, 1, 50, 67, 99, 100, 250] {
-            let bar = progress_bar(percent);
+            let bar = render_progress_bar(percent, PROGRESS_BAR_WIDTH);
             let body = bar.trim_start_matches('[').trim_end_matches(']');
             assert_eq!(body.chars().count(), PROGRESS_BAR_WIDTH);
         }
