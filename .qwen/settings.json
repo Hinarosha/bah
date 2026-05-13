@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(cargo test *)",
-      "Bash(cargo build)"
+      "Bash(cargo build)",
+      "Bash(grep *)",
+      "Bash(./target/release/bah *)"
     ]
   },
   "$version": 4

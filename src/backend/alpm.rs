@@ -7,7 +7,7 @@ use crate::tx_helper::{
     run_plan_with_helper, ActiveCommitGuard, CommitInterruptDefer, TransactionPlan,
 };
 
-use alpm::{AnyEvent, Event, PackageOperation, Progress, SigLevel, TransFlag};
+use alpm::{AnyEvent, CommitError, Error as AlpmError, Event, PackageOperation, Progress, SigLevel, TransFlag};
 use alpm_utils::DbListExt;
 use anyhow::{anyhow, bail, Context, Result};
 use nix::unistd::Uid;
@@ -78,7 +78,7 @@ impl AlpmBackend {
                 alpm.trans_commit().err()
             };
             if let Some(e) = commit_err {
-                return Err(anyhow!("failed to commit ALPM transaction: {}", e));
+                return Err(map_commit_error(e, "failed to commit ALPM transaction"));
             }
             Ok(Status(0))
         })();
@@ -118,7 +118,7 @@ impl AlpmBackend {
                 alpm.trans_commit().err()
             };
             if let Some(e) = commit_err {
-                return Err(anyhow!("failed to commit ALPM remove transaction: {}", e));
+                return Err(map_commit_error(e, "failed to commit ALPM remove transaction"));
             }
             Ok(Status(0))
         })();
@@ -159,7 +159,7 @@ impl AlpmBackend {
                 alpm.trans_commit().err()
             };
             if let Some(e) = commit_err {
-                return Err(anyhow!("failed to commit ALPM upgrade transaction: {}", e));
+                return Err(map_commit_error(e, "failed to commit ALPM upgrade transaction"));
             }
             Ok(Status(0))
         })();
@@ -193,9 +193,6 @@ fn trans_flags_for_sync(args: &Args<&str>) -> TransFlag {
     if args.has_arg("dbonly", "dbonly") {
         flags |= TransFlag::DB_ONLY;
     }
-    if args.has_arg("noscriptlet", "noscriptlet") {
-        flags |= TransFlag::NO_SCRIPTLET;
-    }
     if args.has_arg("overwrite", "overwrite") {
         flags |= TransFlag::NO_CONFLICTS;
     }
@@ -215,9 +212,6 @@ fn trans_flags_for_remove(args: &Args<&str>) -> TransFlag {
     }
     if args.has_arg("dbonly", "dbonly") {
         flags |= TransFlag::DB_ONLY;
-    }
-    if args.has_arg("noscriptlet", "noscriptlet") {
-        flags |= TransFlag::NO_SCRIPTLET;
     }
     if args.has_arg("recursive", "recursive") {
         flags |= TransFlag::RECURSE;
@@ -252,6 +246,14 @@ fn trans_flags_for_upgrade(args: &Args<&str>) -> TransFlag {
         flags |= TransFlag::NO_CONFLICTS;
     }
     flags
+}
+
+fn map_commit_error(e: CommitError, ctx: &str) -> anyhow::Error {
+    let code = e.error();
+    if code == AlpmError::TransHookFailed {
+        return anyhow!("{}: {} (transaction hook failed; see hook output above)", ctx, e);
+    }
+    anyhow!("{}: {}", ctx, e)
 }
 
 fn add_target(alpm: &mut alpm::Alpm, target: &str) -> Result<()> {
@@ -294,7 +296,7 @@ fn plan_from_args(args: &Args<&str>, no_confirm: bool) -> Result<TransactionPlan
             nodeps_count: args.count("d", "nodeps") as u8,
             needed: args.has_arg("needed", "needed"),
             db_only: args.has_arg("dbonly", "dbonly"),
-            no_scriptlet: args.has_arg("noscriptlet", "noscriptlet"),
+            no_scriptlet: false,
             overwrite: args.has_arg("overwrite", "overwrite"),
             print_only: args.has_arg("p", "print"),
             no_confirm,
@@ -305,7 +307,7 @@ fn plan_from_args(args: &Args<&str>, no_confirm: bool) -> Result<TransactionPlan
             cascade: args.has_arg("cascade", "cascade"),
             no_save: args.has_arg("nosave", "nosave"),
             db_only: args.has_arg("dbonly", "dbonly"),
-            no_scriptlet: args.has_arg("noscriptlet", "noscriptlet"),
+            no_scriptlet: false,
             recursive_count: args.count("recursive", "recursive") as u8,
             unneeded: args.has_arg("unneeded", "unneeded"),
             print_only: args.has_arg("p", "print"),

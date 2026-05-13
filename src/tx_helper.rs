@@ -32,7 +32,7 @@ use std::io::{BufRead, BufReader, ErrorKind, Write};
 use std::path::{Component, Path, PathBuf};
 use std::os::fd::{AsFd, OwnedFd};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 use std::sync::{
     mpsc::{channel, RecvTimeoutError},
     Arc, Mutex, MutexGuard,
@@ -60,6 +60,8 @@ static LAST_HOOK_RUNNING: Mutex<Option<String>> = Mutex::new(None);
 static HOOK_PHASE_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// Timestamp when the current hook started (for timeout detection).
 static HOOK_START_TIME: Mutex<Option<Instant>> = Mutex::new(None);
+/// Counts HookStart/HookDone events during a transaction commit.
+static HOOK_EVENT_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 /// Timeout for individual hooks in post-transaction phase (seconds).
 /// Reserved for future hook timeout detection implementation.
@@ -165,10 +167,7 @@ fn sanitize_helper_environment() {
     }
     // Safety: process-local env sanitization for helper subprocess.
     unsafe {
-        std::env::set_var(
-            "PATH",
-            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-        );
+        std::env::set_var("PATH", "/usr/bin:/usr/sbin:/bin:/sbin");
     }
 }
 
@@ -1287,6 +1286,15 @@ pub(crate) fn ensure_boot_rw_for_transaction(_alpm: &alpm::Alpm, _config: &Confi
 
 fn fresh_helper_alpm(config: &Config, no_confirm: bool) -> Result<alpm::Alpm> {
     let alpm = config.new_alpm()?;
+    let cache_dirs: Vec<String> = alpm.cachedirs().iter().map(|d| d.to_string()).collect();
+    let hook_dirs: Vec<String> = alpm.hookdirs().iter().map(|d| d.to_string()).collect();
+    bah_audit_log(&format!(
+        "helper alpm paths: root={} dbpath={} cache_dirs={:?} hook_dirs={:?}",
+        alpm.root(),
+        alpm.dbpath(),
+        cache_dirs,
+        hook_dirs
+    ));
     // Route ALPM textual log (hooks, scriptlets detail) through JSON LogLine instead of stderr only.
     alpm.set_log_cb((), helper_log_cb);
     alpm.set_event_cb(config.color, helper_event_cb);
@@ -1387,7 +1395,7 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
             nodeps_count,
             needed,
             db_only,
-            no_scriptlet,
+            no_scriptlet: _,
             overwrite,
             print_only,
             ..
@@ -1418,9 +1426,6 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
             }
             if *db_only {
                 flags |= TransFlag::DB_ONLY;
-            }
-            if *no_scriptlet {
-                flags |= TransFlag::NO_SCRIPTLET;
             }
             if *overwrite {
                 flags |= TransFlag::NO_CONFLICTS;
@@ -1475,6 +1480,7 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                     *start_time = None;
                 }
                 HOOK_PHASE_ACTIVE.store(false, Ordering::SeqCst);
+                HOOK_EVENT_COUNT.store(0, Ordering::SeqCst);
 
                 // BULLETPROOF FIX: Use RAII guard for drop-safe cleanup
                 let _cleanup_guard = TransactionCleanupGuard::new(&alpm);
@@ -1484,6 +1490,10 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                     let _guard = ActiveCommitGuard::arm(&alpm);
                     alpm.trans_commit().err()
                 };
+                bah_audit_log(&format!(
+                    "HOOK_EVENT_COUNT={} (sync)",
+                    HOOK_EVENT_COUNT.load(Ordering::Relaxed)
+                ));
                 if let Some(e) = commit_err {
                     let code = e.error();
                     // BULLETPROOF FIX: Tell cleanup guard to skip unlock on hook failure
@@ -1505,7 +1515,7 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
             cascade,
             no_save,
             db_only,
-            no_scriptlet,
+            no_scriptlet: _,
             recursive_count,
             unneeded,
             print_only,
@@ -1523,9 +1533,6 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
             }
             if *db_only {
                 flags |= TransFlag::DB_ONLY;
-            }
-            if *no_scriptlet {
-                flags |= TransFlag::NO_SCRIPTLET;
             }
             if *recursive_count > 0 {
                 flags |= TransFlag::RECURSE;
@@ -1580,6 +1587,7 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                     *start_time = None;
                 }
                 HOOK_PHASE_ACTIVE.store(false, Ordering::SeqCst);
+                HOOK_EVENT_COUNT.store(0, Ordering::SeqCst);
 
                 // BULLETPROOF FIX: Use RAII guard for drop-safe cleanup
                 let _cleanup_guard = TransactionCleanupGuard::new(&alpm);
@@ -1589,6 +1597,10 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                     let _guard = ActiveCommitGuard::arm(&alpm);
                     alpm.trans_commit().err()
                 };
+                bah_audit_log(&format!(
+                    "HOOK_EVENT_COUNT={} (remove)",
+                    HOOK_EVENT_COUNT.load(Ordering::Relaxed)
+                ));
                 if let Some(e) = commit_err {
                     let code = e.error();
                     // BULLETPROOF FIX: Tell cleanup guard to skip unlock on hook failure
@@ -1677,6 +1689,7 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                     *start_time = None;
                 }
                 HOOK_PHASE_ACTIVE.store(false, Ordering::SeqCst);
+                HOOK_EVENT_COUNT.store(0, Ordering::SeqCst);
 
                 // BULLETPROOF FIX: Use RAII guard for drop-safe cleanup
                 let _cleanup_guard = TransactionCleanupGuard::new(&alpm);
@@ -1686,6 +1699,10 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                     let _guard = ActiveCommitGuard::arm(&alpm);
                     alpm.trans_commit().err()
                 };
+                bah_audit_log(&format!(
+                    "HOOK_EVENT_COUNT={} (upgrade)",
+                    HOOK_EVENT_COUNT.load(Ordering::Relaxed)
+                ));
                 if let Some(e) = commit_err {
                     let code = e.error();
                     // BULLETPROOF FIX: Tell cleanup guard to skip unlock on hook failure
@@ -1906,6 +1923,7 @@ fn helper_event_cb(event: AnyEvent, c: &mut Colors) {
         )),
         HookStart(he) => {
             bah_audit_log(&format!("hook phase start when={:?}", he.when()));
+            HOOK_EVENT_COUNT.fetch_add(1, Ordering::Relaxed);
             if he.when() == HookWhen::PostTransaction {
                 // BULLETPROOF FIX: Mark hook phase as active for timeout tracking
                 HOOK_PHASE_ACTIVE.store(true, Ordering::SeqCst);
@@ -1918,6 +1936,7 @@ fn helper_event_cb(event: AnyEvent, c: &mut Colors) {
         }
         HookDone(he) => {
             bah_audit_log(&format!("hook phase done when={:?}", he.when()));
+            HOOK_EVENT_COUNT.fetch_add(1, Ordering::Relaxed);
             if he.when() == HookWhen::PostTransaction {
                 // BULLETPROOF FIX: Clear hook phase tracking
                 HOOK_PHASE_ACTIVE.store(false, Ordering::SeqCst);

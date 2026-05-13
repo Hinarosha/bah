@@ -880,6 +880,19 @@ then initialise it with:
     }
 
     pub fn new_alpm(&self) -> Result<alpm::Alpm> {
+        ensure!(
+            !self.pacman.root_dir.is_empty(),
+            tr!("invalid pacman RootDir: empty")
+        );
+        ensure!(
+            !self.pacman.db_path.is_empty(),
+            tr!("invalid pacman DBPath: empty")
+        );
+        ensure!(
+            !self.pacman.cache_dir.is_empty(),
+            tr!("invalid pacman CacheDir: empty")
+        );
+
         let mut alpm = alpm::Alpm::new(self.pacman.root_dir.as_str(), self.pacman.db_path.as_str())
             .with_context(|| {
                 tr!(
@@ -893,6 +906,52 @@ then initialise it with:
         alpm.set_dl_cb((), download);
         alpm.set_log_cb(self.color, log);
         alpm_utils::configure_alpm(&mut alpm, &self.pacman)?;
+
+        // Keep pacman parity: always include system hooks and any HookDir entries from pacman.conf.
+        let mut hookdirs = Vec::new();
+        hookdirs.push("/usr/share/libalpm/hooks".to_string());
+        for dir in &self.pacman.hook_dir {
+            let already_added = hookdirs.iter().any(|h| {
+                h.trim_end_matches('/') == dir.trim_end_matches('/')
+            });
+            if !already_added {
+                hookdirs.push(dir.clone());
+            }
+        }
+        let hookdir_refs: Vec<&str> = hookdirs.iter().map(String::as_str).collect();
+        alpm.set_hookdirs(hookdir_refs.iter().copied())?;
+
+        ensure!(
+            alpm.root().trim_end_matches('/') == self.pacman.root_dir.trim_end_matches('/'),
+            tr!(
+                "ALPM RootDir mismatch: expected '{}' got '{}'",
+                self.pacman.root_dir,
+                alpm.root()
+            )
+        );
+        ensure!(
+            alpm.dbpath().trim_end_matches('/') == self.pacman.db_path.trim_end_matches('/'),
+            tr!(
+                "ALPM DBPath mismatch: expected '{}' got '{}'",
+                self.pacman.db_path,
+                alpm.dbpath()
+            )
+        );
+
+        let actual_cache_dirs: Vec<String> = alpm.cachedirs().iter().map(|d| d.to_string()).collect();
+        let expected_cache_dirs: Vec<&str> = self.pacman.cache_dir.iter().map(String::as_str).collect();
+        ensure!(
+            expected_cache_dirs.iter().all(|expected| {
+                actual_cache_dirs
+                    .iter()
+                    .any(|actual| {
+                        actual.trim_end_matches('/') == expected.trim_end_matches('/')
+                    })
+            }),
+            "ALPM CacheDir mismatch: expected {:?} got {:?}",
+            self.pacman.cache_dir,
+            actual_cache_dirs
+        );
 
         if !self.chroot {
             for dep in &self.assume_installed {
