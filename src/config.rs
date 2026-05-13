@@ -736,7 +736,13 @@ impl Config {
         self.init_pacmanconf()?;
         self.init_alpm()?;
 
-        if self.pacman.color && !self.globals.has_arg("color", "color") {
+        // FIX 1: Bah ALWAYS uses colors regardless of pacman.conf Color setting.
+        // Colors are only disabled if:
+        // 1. Output is not a TTY (piped to file)
+        // 2. User explicitly passes --nocolor
+        // Otherwise: colors are ON, always.
+        // The Colors::from("auto") already handles TTY detection internally.
+        if !self.globals.has_arg("nocolor", "nocolor") {
             self.color = Colors::from("auto");
         }
 

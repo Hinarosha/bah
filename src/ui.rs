@@ -21,10 +21,12 @@ use unicode_width::UnicodeWidthStr;
 const COL_GAP: &str = "  ";
 const ANSI_CLEAR_LINE: &str = "\r\x1b[2K";
 const ANSI_BOLD: &str = "\x1b[1m";
+const ANSI_BOLD_CYAN: &str = "\x1b[1;36m";
+const ANSI_BOLD_GREEN: &str = "\x1b[1;32m";
+const ANSI_BOLD_BLUE: &str = "\x1b[1;34m";
 const ANSI_CYAN: &str = "\x1b[36m";
 const ANSI_YELLOW: &str = "\x1b[33m";
 const ANSI_GREY: &str = "\x1b[90m";
-const ANSI_BOLD_BLUE: &str = "\x1b[1;34m";
 const ANSI_GREEN: &str = "\x1b[32m";
 const ANSI_RESET: &str = "\x1b[0m";
 const PROGRESS_BAR_WIDTH: usize = 52;
@@ -896,7 +898,7 @@ pub fn print_critical_pkg_warning(pkgs: &[String]) {
 }
 
 fn ansi_ok() -> String {
-    format!("{ANSI_GREEN}::{ANSI_RESET}")
+    format!("{ANSI_BOLD_GREEN}[OK]{ANSI_RESET}")
 }
 
 fn format_speed(bytes_per_sec: f64) -> String {
@@ -1389,7 +1391,11 @@ impl TransactionRenderController {
     }
 
     pub fn on_hook_step(&mut self, _config: &Config, current: usize, total: usize, desc: &str) {
-        self.on_log_line(&format!("({}/{}) {} {}", current, total, desc, ansi_ok()));
+        // FIX 2: Consistent colors for hook steps
+        self.on_log_line(&format!(
+            "{} ({}/{}) {} {}",
+            ANSI_BOLD_CYAN, current, total, desc, ansi_ok()
+        ));
     }
 
     pub fn on_hook_phase_done(&mut self, config: &Config) {
@@ -1415,12 +1421,11 @@ pub fn print_hook_phase_start(config: &Config) {
     );
 }
 
-pub fn print_hook_step(config: &Config, current: usize, total: usize, desc: &str) {
-    let c = &config.color;
+pub fn print_hook_step(_config: &Config, current: usize, total: usize, desc: &str) {
+    // FIX 2: Consistent colors for hook steps
     println!(
-        "{} {}",
-        c.field.paint(format!("[{}/{}]", current, total)),
-        c.install_version.paint(desc)
+        "{}{} ({}/{}) {} {}",
+        ANSI_BOLD_CYAN, ANSI_RESET, current, total, desc, ansi_ok()
     );
 }
 
