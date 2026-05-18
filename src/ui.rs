@@ -1068,11 +1068,11 @@ fn render_install_line(
     current: usize,
     total: usize,
     terminal_width: usize,
+    is_removal: bool,
 ) -> String {
     let percent = percent.min(100);
-    let left = format!(
-        "{ANSI_CYAN}Installing{ANSI_RESET} {ANSI_BOLD}{package}{ANSI_RESET}..."
-    );
+    let verb = if is_removal { "Removing" } else { "Installing" };
+    let left = format!("{ANSI_CYAN}{verb}{ANSI_RESET} {ANSI_BOLD}{package}{ANSI_RESET}...");
     let right_base = format!("{ANSI_GREY}{current}/{total}{ANSI_RESET} {percent}%");
     let mut bar_width = PROGRESS_BAR_WIDTH;
 
@@ -1120,6 +1120,7 @@ struct InstallState {
     current: usize,
     total: usize,
     frozen: bool,
+    is_removal: bool,
 }
 
 impl TransactionRenderController {
@@ -1248,6 +1249,7 @@ impl TransactionRenderController {
                     state.current,
                     state.total,
                     term_w,
+                    state.is_removal,
                 );
                 out.push_str(ANSI_CLEAR_LINE);
                 out.push_str(&line);
@@ -1263,6 +1265,7 @@ impl TransactionRenderController {
                     state.current,
                     state.total,
                     term_w,
+                    state.is_removal,
                 );
                 out.push_str(ANSI_CLEAR_LINE);
                 out.push_str(&line);
@@ -1340,6 +1343,7 @@ impl TransactionRenderController {
         percent: u64,
         current: usize,
         total: usize,
+        is_removal: bool,
     ) {
         let key = package.to_string();
         let is_new = !self.install_state.contains_key(&key);
@@ -1352,6 +1356,7 @@ impl TransactionRenderController {
             current,
             total,
             frozen: false,
+            is_removal,
         });
 
         state.percent = percent.min(100);

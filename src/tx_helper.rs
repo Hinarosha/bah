@@ -533,6 +533,7 @@ pub enum HelperToParent {
         percent: u64,
         current: usize,
         total: usize,
+        is_removal: bool,
     },
     HookPhaseStart,
     HookStep {
@@ -600,15 +601,19 @@ pub fn run_helper_transaction(config: &Config) -> Result<i32> {
     #[cfg(target_os = "linux")]
     sanitize_helper_environment();
 
-    let stdin = std::io::stdin();
-    let mut locked = stdin.lock();
-    let buf = read_until_newline_limited(&mut locked, MAX_PLAN_BYTES)
-        .context("helper transaction plan")?;
-    if buf.is_empty() {
-        bail!("helper transaction plan is empty");
-    }
-    let plan: TransactionPlan =
-        serde_json::from_slice(&buf).context("failed to parse helper transaction plan JSON")?;
+    let plan: TransactionPlan = {
+        let stdin = std::io::stdin();
+        let mut locked = stdin.lock();
+        let buf = read_until_newline_limited(&mut locked, MAX_PLAN_BYTES)
+            .context("helper transaction plan")?;
+        if buf.is_empty() {
+            bail!("helper transaction plan is empty");
+        }
+        serde_json::from_slice(&buf).context("failed to parse helper transaction plan JSON")?
+        // locked and stdin dropped here — releases the non-reentrant stdin mutex before
+        // execute_plan_root() runs, allowing wait_parent_answer() to call stdin.lock()
+        // from the same thread without deadlocking.
+    };
     validate_plan(&plan)?;
 
     install_ipc_json_sink().context("failed to set up helper JSON IPC channel")?;
@@ -812,8 +817,9 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
                         percent,
                         current,
                         total,
+                        is_removal,
                     } => {
-                        ui.on_install_progress(&package, percent, current, total);
+                        ui.on_install_progress(&package, percent, current, total, is_removal);
                     }
                     HelperToParent::HookPhaseStart => {
                         ui.on_hook_phase_start(config);
@@ -2004,10 +2010,11 @@ fn helper_progress_cb(
     current: usize,
     state: &mut HelperInstallThrottle,
 ) {
-    match progress {
-        Progress::AddStart | Progress::UpgradeStart | Progress::RemoveStart => {}
+    let is_removal = match progress {
+        Progress::RemoveStart => true,
+        Progress::AddStart | Progress::UpgradeStart => false,
         _ => return,
-    }
+    };
 
     let now = Instant::now();
     let key = pkgname.to_string();
@@ -2023,6 +2030,7 @@ fn helper_progress_cb(
             percent: p,
             current,
             total: howmany,
+            is_removal,
         });
     }
 }
@@ -2087,12 +2095,17 @@ fn helper_question_cb(question: AnyQuestion, state: &mut QuestionIpcState) {
     } else {
         let id = state.next_id;
         state.next_id += 1;
-        let _ = emit(&HelperToParent::Question {
+        if emit(&HelperToParent::Question {
             id,
             prompt,
             default_yes,
-        });
-        wait_parent_answer(id).unwrap_or(default_yes)
+        })
+        .is_ok()
+        {
+            wait_parent_answer(id).unwrap_or(default_yes)
+        } else {
+            default_yes
+        }
     };
     apply_answer(yes);
 }
