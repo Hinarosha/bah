@@ -657,7 +657,11 @@ async fn search_aur(config: &Config, targets: &[String]) -> Result<Vec<raur::Pac
     match config.sort_by {
         SortBy::Votes => matches.sort_by(|a, b| b.num_votes.cmp(&a.num_votes)),
         SortBy::Popularity => {
-            matches.sort_by(|a, b| b.popularity.partial_cmp(&a.popularity).unwrap())
+            matches.sort_by(|a, b| {
+                b.popularity
+                    .partial_cmp(&a.popularity)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
         }
         SortBy::Id => matches.sort_by_key(|p| p.id),
         SortBy::Name => matches.sort_by(|a, b| a.name.cmp(&b.name)),

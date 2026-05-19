@@ -67,7 +67,7 @@ pub fn spawn_auth(config: &Config) -> Result<Pipe> {
 
     let mut pipe = Pipe { read, write };
 
-    pipe.wait_ok().unwrap();
+    pipe.wait_ok().context("auth process handshake failed")?;
     Ok(pipe)
 }
 

@@ -119,7 +119,7 @@ pub async fn gendb(config: &mut Config) -> Result<()> {
     let mut devel_info = load_devel_info(config)?.unwrap_or_default();
 
     aur.retain(|pkg| {
-        let pkg = db.pkg(*pkg).unwrap();
+        let Ok(pkg) = db.pkg(*pkg) else { return true };
         let pkg = pkg.base().unwrap_or_else(|| pkg.name());
 
         !devel_info.info.contains_key(pkg)
@@ -232,7 +232,7 @@ pub fn save_devel_info(config: &Config, devel_info: &DevelInfo) -> Result<()> {
     let mut file =
         file.with_context(|| tr!("failed to create temporary file: {}", temp.display()))?;
 
-    let toml = toml::to_string(&devel_info).unwrap();
+    let toml = toml::to_string(&devel_info).context("failed to serialize devel info")?;
 
     file.write_all(toml.as_bytes())
         .with_context(|| tr!("failed to write to temporary file: {}", temp.display()))?;
@@ -423,7 +423,7 @@ pub async fn filter_devel_updates(
     config.raur.cache_info(cache, &aur).await?;
     let aur = aur
         .iter()
-        .map(|u| pkgbases.remove(u.as_str()).unwrap())
+        .filter_map(|u| pkgbases.remove(u.as_str()))
         .collect::<Vec<_>>();
 
     let mut updates = Vec::new();

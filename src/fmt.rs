@@ -13,13 +13,21 @@ pub fn opt(opt: &Option<String>) -> String {
 }
 
 pub fn date(date: i64) -> String {
-    let date = Utc.timestamp_opt(date, 0).unwrap().with_timezone(&Local);
-    date.format("%a, %e %b %Y %T").to_string()
+    let dt = Utc
+        .timestamp_opt(date, 0)
+        .single()
+        .unwrap_or_else(|| Utc.timestamp_opt(0, 0).single().expect("epoch is valid"))
+        .with_timezone(&Local);
+    dt.format("%a, %e %b %Y %T").to_string()
 }
 
 pub fn ymd(date: i64) -> String {
-    let date = Utc.timestamp_opt(date, 0).unwrap().with_timezone(&Local);
-    date.format("%Y-%m-%d").to_string()
+    let dt = Utc
+        .timestamp_opt(date, 0)
+        .single()
+        .unwrap_or_else(|| Utc.timestamp_opt(0, 0).single().expect("epoch is valid"))
+        .with_timezone(&Local);
+    dt.format("%Y-%m-%d").to_string()
 }
 
 fn word_len(s: &str) -> usize {

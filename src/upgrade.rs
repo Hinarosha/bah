@@ -32,18 +32,16 @@ pub fn repo_upgrades(config: &Config) -> Result<Vec<&alpm::Package>> {
     let mut pkgs = config.alpm.trans_add().iter().collect::<Vec<_>>();
     let (dbs, _) = repo::repo_aur_dbs(config);
 
-    pkgs.retain(|p| dbs.iter().any(|db| db.name() == p.db().unwrap().name()));
+    pkgs.retain(|p| p.db().map_or(false, |d| dbs.iter().any(|db| db.name() == d.name())));
 
     pkgs.sort_by(|a, b| {
-        dbs.iter()
-            .position(|db| db.name() == a.db().unwrap().name())
-            .unwrap()
-            .cmp(
-                &dbs.iter()
-                    .position(|db| db.name() == b.db().unwrap().name())
-                    .unwrap(),
-            )
-            .then(a.name().cmp(b.name()))
+        let pos_a = a.db()
+            .and_then(|d| dbs.iter().position(|db| db.name() == d.name()))
+            .unwrap_or(usize::MAX);
+        let pos_b = b.db()
+            .and_then(|d| dbs.iter().position(|db| db.name() == d.name()))
+            .unwrap_or(usize::MAX);
+        pos_a.cmp(&pos_b).then(a.name().cmp(b.name()))
     });
     //config.alpm.trans_release();
     Ok(pkgs)

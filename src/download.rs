@@ -159,12 +159,13 @@ pub async fn cache_info_with_warnings<'a, S: AsRef<str> + Send + Sync>(
 
     for pkg in &aur_pkgs {
         if should_warn(&pkg.name) {
-            if pkg.out_of_date.is_some() {
-                ood.push(cache.get(pkg.name.as_str()).unwrap().name.as_str());
-            }
-
-            if pkg.maintainer.is_none() {
-                orphaned.push(cache.get(pkg.name.as_str()).unwrap().name.as_str());
+            if let Some(info) = cache.get(pkg.name.as_str()) {
+                if pkg.out_of_date.is_some() {
+                    ood.push(info.name.as_str());
+                }
+                if pkg.maintainer.is_none() {
+                    orphaned.push(info.name.as_str());
+                }
             }
         }
     }
@@ -669,7 +670,9 @@ fn pipe_bat(config: &Config, pkgbuild: &[u8]) -> Result<()> {
         .stdin(Stdio::piped());
     let mut child = exec::spawn(&mut command)?;
 
-    let _ = child.stdin.as_mut().unwrap().write_all(pkgbuild);
+    if let Some(stdin) = child.stdin.as_mut() {
+        let _ = stdin.write_all(pkgbuild);
+    }
     exec::wait(&command, &mut child)?;
     Ok(())
 }

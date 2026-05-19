@@ -56,8 +56,6 @@ static COMMIT_INTERRUPT_ALLOWED: AtomicBool = AtomicBool::new(true);
 /// Tracks the last hook that was running during transaction commit.
 /// Used for error reporting when trans_commit() returns TransHookFailed.
 static LAST_HOOK_RUNNING: Mutex<Option<String>> = Mutex::new(None);
-/// Tracks whether we are currently in a protected hook phase (for timeout detection).
-static HOOK_PHASE_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// Timestamp when the current hook started (for timeout detection).
 static HOOK_START_TIME: Mutex<Option<Instant>> = Mutex::new(None);
 /// Counts HookStart/HookDone events during a transaction commit.
@@ -126,7 +124,10 @@ impl Drop for TransactionCleanupGuard {
         // SAFETY: alpm_ptr is valid for the lifetime of the transaction
         // and we only call trans_release/unlock which are safe ALPM operations
         unsafe {
-            let _ = alpm_sys::alpm_trans_release(self.alpm_ptr);
+            let rc = alpm_sys::alpm_trans_release(self.alpm_ptr);
+            if rc != 0 {
+                bah_audit_log(&format!("TransactionCleanupGuard: trans_release() returned {}", rc));
+            }
         }
         bah_audit_log("TransactionCleanupGuard: trans_release() called");
         
@@ -410,7 +411,7 @@ pub(crate) struct CommitInterruptDefer;
 
 impl CommitInterruptDefer {
     pub(crate) fn new() -> Self {
-        COMMIT_INTERRUPT_ALLOWED.store(false, Ordering::Release);
+        COMMIT_INTERRUPT_ALLOWED.store(false, Ordering::SeqCst);
         bah_audit_log("trans_commit: SIGINT/SIGTERM -> alpm_trans_interrupt suppressed until commit completes");
         Self
     }
@@ -418,7 +419,7 @@ impl CommitInterruptDefer {
 
 impl Drop for CommitInterruptDefer {
     fn drop(&mut self) {
-        COMMIT_INTERRUPT_ALLOWED.store(true, Ordering::Release);
+        COMMIT_INTERRUPT_ALLOWED.store(true, Ordering::SeqCst);
         bah_audit_log("trans_commit: SIGINT/SIGTERM interrupt path re-enabled");
     }
 }
@@ -620,7 +621,7 @@ pub fn run_helper_transaction(config: &Config) -> Result<i32> {
 
     match execute_plan_root(config, &plan) {
         Ok(code) => {
-            emit(&HelperToParent::Result { code })?;
+            let _ = emit(&HelperToParent::Result { code });
             Ok(code)
         }
         Err(err) => {
@@ -794,6 +795,7 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
         .context("failed to flush transaction plan to helper")?;
 
     let mut final_code: Option<i32> = None;
+    let mut loop_err: Option<anyhow::Error> = None;
     let mut ui = TransactionRenderController::new();
 
     loop {
@@ -844,17 +846,26 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
                         default_yes,
                     } => {
                         let yes = ask(config, &prompt, default_yes);
-                        serde_json::to_writer(
+                        let write_result = serde_json::to_writer(
                             &mut child_stdin,
                             &ParentToHelper::Answer { id, yes },
                         )
-                        .context("failed to write answer JSON to helper (broken pipe?)")?;
-                        child_stdin
-                            .write_all(b"\n")
-                            .context("failed to write answer newline to helper")?;
-                        child_stdin
-                            .flush()
-                            .context("failed to flush answer to helper")?;
+                        .context("failed to write answer JSON to helper (broken pipe?)")
+                        .and_then(|_| {
+                            child_stdin
+                                .write_all(b"\n")
+                                .context("failed to write answer newline to helper")
+                        })
+                        .and_then(|_| {
+                            child_stdin
+                                .flush()
+                                .context("failed to flush answer to helper")
+                        });
+                        if let Err(e) = write_result {
+                            ui.finish();
+                            loop_err = Some(e);
+                            break;
+                        }
                     }
                     HelperToParent::Result { code } => {
                         ui.finish();
@@ -863,12 +874,16 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
                     }
                     HelperToParent::Error { message } => {
                         ui.finish();
-                        bail!("helper error: {}", message);
+                        loop_err = Some(anyhow::anyhow!("helper error: {}", message));
+                        break;
                     }
                 }
             }
             Ok(Ok(None)) => break,
-            Ok(Err(err)) => bail!("read helper IPC line: {}", err),
+            Ok(Err(err)) => {
+                loop_err = Some(anyhow::anyhow!("read helper IPC line: {}", err));
+                break;
+            }
             Err(RecvTimeoutError::Timeout) => {
                 if let Some(_) = child.try_wait().context("failed to query helper status")? {
                     break;
@@ -884,7 +899,11 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
     if let Some(thread) = signal_thread {
         let _ = thread.join();
     }
-    let _ = ipc_thread.join();
+    let _ = ipc_thread.join(); // always reached: loop_err stores errors instead of bailing
+
+    if let Some(e) = loop_err {
+        return Err(e);
+    }
 
     if let Some(code) = final_code {
         return Ok(Status(code));
@@ -923,13 +942,13 @@ pub(crate) fn ensure_sig_interrupt_thread_started() {
                 return;
             };
             for sig in signals.forever() {
-                if !COMMIT_INTERRUPT_ALLOWED.load(Ordering::Acquire) {
+                if !COMMIT_INTERRUPT_ALLOWED.load(Ordering::SeqCst) {
                     bah_audit_log(&format!(
                         "signal {sig} ignored (protected trans_commit; hooks must finish)"
                     ));
                     continue;
                 }
-                let p = ACTIVE_COMMIT_HANDLE.load(Ordering::Acquire);
+                let p = ACTIVE_COMMIT_HANDLE.load(Ordering::SeqCst);
                 if !p.is_null() {
                     bah_audit_log(&format!("signal {sig}: requesting alpm_trans_interrupt"));
                     unsafe {
@@ -952,14 +971,14 @@ pub(crate) struct ActiveCommitGuard;
 
 impl ActiveCommitGuard {
     pub(crate) fn arm(alpm: &alpm::Alpm) -> Self {
-        ACTIVE_COMMIT_HANDLE.store(alpm.as_alpm_handle_t(), Ordering::Release);
+        ACTIVE_COMMIT_HANDLE.store(alpm.as_alpm_handle_t(), Ordering::SeqCst);
         Self
     }
 }
 
 impl Drop for ActiveCommitGuard {
     fn drop(&mut self) {
-        ACTIVE_COMMIT_HANDLE.store(std::ptr::null_mut(), Ordering::Release);
+        ACTIVE_COMMIT_HANDLE.store(std::ptr::null_mut(), Ordering::SeqCst);
     }
 }
 
@@ -972,8 +991,9 @@ fn map_commit_error(e: CommitError, ctx: &str) -> anyhow::Error {
         s.push_str(" (transaction hook failed");
         // Include the hook that was running when failure occurred
         let hook_info = LAST_HOOK_RUNNING.lock()
-            .ok()
-            .and_then(|g| g.as_ref().cloned());
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+            .cloned();
         if let Some(hook_name) = hook_info {
             s.push_str(&format!(": last running hook was '{}'", hook_name));
         }
@@ -991,8 +1011,9 @@ fn map_commit_error(e: CommitError, ctx: &str) -> anyhow::Error {
 /// Displays a prominent warning if kernel/initramfs hooks failed.
 fn print_critical_hook_failure_warning() {
     let hook_info = LAST_HOOK_RUNNING.lock()
-        .ok()
-        .and_then(|g| g.as_ref().cloned());
+        .unwrap_or_else(|p| p.into_inner())
+        .as_ref()
+        .cloned();
     
     let is_critical = hook_info.as_ref().map_or(false, |h| {
         let h_lower = h.to_lowercase();
@@ -1485,7 +1506,6 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                 if let Ok(mut start_time) = HOOK_START_TIME.lock() {
                     *start_time = None;
                 }
-                HOOK_PHASE_ACTIVE.store(false, Ordering::SeqCst);
                 HOOK_EVENT_COUNT.store(0, Ordering::SeqCst);
 
                 // BULLETPROOF FIX: Use RAII guard for drop-safe cleanup
@@ -1592,7 +1612,6 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                 if let Ok(mut start_time) = HOOK_START_TIME.lock() {
                     *start_time = None;
                 }
-                HOOK_PHASE_ACTIVE.store(false, Ordering::SeqCst);
                 HOOK_EVENT_COUNT.store(0, Ordering::SeqCst);
 
                 // BULLETPROOF FIX: Use RAII guard for drop-safe cleanup
@@ -1694,7 +1713,6 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                 if let Ok(mut start_time) = HOOK_START_TIME.lock() {
                     *start_time = None;
                 }
-                HOOK_PHASE_ACTIVE.store(false, Ordering::SeqCst);
                 HOOK_EVENT_COUNT.store(0, Ordering::SeqCst);
 
                 // BULLETPROOF FIX: Use RAII guard for drop-safe cleanup
@@ -1932,7 +1950,6 @@ fn helper_event_cb(event: AnyEvent, c: &mut Colors) {
             HOOK_EVENT_COUNT.fetch_add(1, Ordering::Relaxed);
             if he.when() == HookWhen::PostTransaction {
                 // BULLETPROOF FIX: Mark hook phase as active for timeout tracking
-                HOOK_PHASE_ACTIVE.store(true, Ordering::SeqCst);
                 if let Ok(mut start_time) = HOOK_START_TIME.lock() {
                     *start_time = Some(Instant::now());
                 }
@@ -1945,7 +1962,6 @@ fn helper_event_cb(event: AnyEvent, c: &mut Colors) {
             HOOK_EVENT_COUNT.fetch_add(1, Ordering::Relaxed);
             if he.when() == HookWhen::PostTransaction {
                 // BULLETPROOF FIX: Clear hook phase tracking
-                HOOK_PHASE_ACTIVE.store(false, Ordering::SeqCst);
                 if let Ok(mut start_time) = HOOK_START_TIME.lock() {
                     *start_time = None;
                 }
@@ -2112,6 +2128,7 @@ fn helper_question_cb(question: AnyQuestion, state: &mut QuestionIpcState) {
 
 fn wait_parent_answer(id: u64) -> Option<bool> {
     let stdin = std::io::stdin();
+    let mut bad_lines: u32 = 0;
     loop {
         let mut locked = stdin.lock();
         let line = match read_ipc_line_bounded(&mut locked) {
@@ -2121,6 +2138,10 @@ fn wait_parent_answer(id: u64) -> Option<bool> {
         };
         drop(locked);
         let Ok(msg) = serde_json::from_str::<ParentToHelper>(line.trim()) else {
+            bad_lines += 1;
+            if bad_lines >= 16 {
+                return None; // parent likely dead or pipe corrupted
+            }
             continue;
         };
         match msg {

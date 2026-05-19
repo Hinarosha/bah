@@ -1,5 +1,13 @@
 # Changelog
 
+## bah v2.6.3 (2026-05-19)
+
+### Fixed
+- Signal thread could race on stale atomic state during transaction interrupt; upgraded to `SeqCst` ordering.
+- IPC reader thread was silently detached when the parent event loop exited early on error; it now always joins.
+- `wait_parent_answer` could hang forever on a dead parent; added a 16-line malformed-input cap before falling back to the default answer.
+- Codebase-wide audit: replaced panicking `.unwrap()` calls across `tx_helper.rs`, `config.rs`, `search.rs`, `fmt.rs`, `auth.rs`, `devel.rs`, `repo.rs`, `upgrade.rs`, `query.rs`, `download.rs`, and `install.rs` with proper error propagation or safe fallbacks. AUR NaN popularity, out-of-range timestamps, missing repo/db handles, and a handful of other edge cases could all previously crash the process.
+
 ## bah v2.6.2 (2026-05-18)
 
 ### Fixed

@@ -64,7 +64,7 @@ pub async fn print_upgrade_list(config: &mut Config) -> Result<i32> {
                 if !config.mode.pkgbuild() {
                     return true;
                 }
-                let local_pkg = db.pkg(target).unwrap();
+                let Ok(local_pkg) = db.pkg(target) else { return true };
 
                 if let Some((base, _pkg)) = config.pkgbuild_repos.pkg(config, target) {
                     if alpm::Version::new(&*base.srcinfo.version()) > local_pkg.version() {
@@ -100,7 +100,7 @@ pub async fn print_upgrade_list(config: &mut Config) -> Result<i32> {
             let devel = filter_devel_updates(config, &mut cache, &devel).await?;
 
             for target in aur {
-                let local_pkg = db.pkg(target).unwrap();
+                let Ok(local_pkg) = db.pkg(target) else { continue };
                 if let Some(pkg) = cache.get(target) {
                     let devel = devel.iter().any(|d| d.pkg == pkg.name);
 
@@ -140,7 +140,7 @@ fn print_upgrade(config: &Config, name: &str, local_ver: &str, new_ver: &str) {
             upgrade.paint(local_ver),
             upgrade.paint(new_ver)
         );
-        if config.alpm.localdb().pkg(name).unwrap().should_ignore() {
+        if config.alpm.localdb().pkg(name).map_or(false, |p| p.should_ignore()) {
             print!("{}", tr!(" [ignored]"));
         }
         println!();

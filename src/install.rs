@@ -664,8 +664,8 @@ impl Installer {
                     .syncdbs()
                     .iter()
                     .find(|db| db.name() == *repo)
-                    .unwrap();
-                let path = repo::file(repo).unwrap();
+                    .with_context(|| format!("AUR repo '{}' not found in sync dbs", repo))?;
+                let path = repo::file(repo).context("failed to resolve AUR repo file path")?;
                 let name = repo.name().to_string();
                 repo::add(config, path, &name, &paths)?;
                 repo::refresh(config, &[name])?;
@@ -843,7 +843,7 @@ impl Installer {
         let (_, repo) = repo::repo_aur_dbs(config);
         let default_repo = repo.first();
         if let Some(repo) = default_repo {
-            let file = repo::file(repo).unwrap();
+            let file = repo::file(repo).context("failed to resolve AUR repo file path")?;
             repo::init(config, file, repo.name())?;
         }
 
@@ -855,8 +855,13 @@ impl Installer {
             }
         }
 
-        let repo_server =
-            default_repo.map(|r| (r.name().to_string(), repo::file(r).unwrap().to_string()));
+        let repo_server = default_repo
+            .map(|r| {
+                repo::file(r)
+                    .context("failed to resolve AUR repo file path")
+                    .map(|f| (r.name().to_string(), f.to_string()))
+            })
+            .transpose()?;
         drop(repo);
 
         for base in build {

@@ -37,13 +37,13 @@ pub struct Alpm {
 impl std::ops::Deref for Alpm {
     type Target = alpm::Alpm;
     fn deref(&self) -> &Self::Target {
-        self.alpm.as_ref().unwrap()
+        self.alpm.as_ref().expect("ALPM handle used before initialisation")
     }
 }
 
 impl std::ops::DerefMut for Alpm {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.alpm.as_mut().unwrap()
+        self.alpm.as_mut().expect("ALPM handle used before initialisation")
     }
 }
 

@@ -80,7 +80,11 @@ pub fn add<P: AsRef<Path>, S: AsRef<OsStr>>(
 
     let err = exec::command(&mut cmd);
 
-    let user = User::from_uid(Uid::current()).unwrap().unwrap();
+    let user = User::from_uid(Uid::current())
+        .ok()
+        .flatten()
+        .map(|u| u.name)
+        .unwrap_or_else(|| format!("uid:{}", Uid::current()));
 
     if err.is_err() {
         eprintln!(
@@ -88,7 +92,7 @@ pub fn add<P: AsRef<Path>, S: AsRef<OsStr>>(
     bah now expects local repos to be writable as your user:
     You should chown/chmod your repos to be writable by you:
     chown -R {}: {}",
-            user.name,
+            user,
             path.display()
         );
     }
@@ -357,8 +361,8 @@ pub fn clean(config: &mut Config) -> Result<i32> {
     }
 
     for pkgs in &rem {
-        let repo = pkgs[0].db().unwrap();
-        let path = file(repo).unwrap();
+        let repo = pkgs[0].db().context("package has no associated database")?;
+        let path = file(repo).context("failed to resolve repo file path")?;
         let pkgs = pkgs.iter().map(|p| p.name()).collect::<Vec<_>>();
         remove(config, path, repo.name(), &pkgs)?;
     }
@@ -366,9 +370,11 @@ pub fn clean(config: &mut Config) -> Result<i32> {
     let mut rmfiles = Vec::new();
 
     for pkg in rem.iter().flatten() {
-        let repo = pkg.db().unwrap();
-        let path = file(repo).unwrap();
-        let pkgfile = Path::new(path).join(pkg.filename().unwrap());
+        let repo = pkg.db().context("package has no associated database")?;
+        let path = file(repo).context("failed to resolve repo file path")?;
+        let pkgfile = Path::new(path).join(
+            pkg.filename().context("package has no cached filename")?,
+        );
         rmfiles.push(pkgfile);
     }
 
@@ -430,8 +436,8 @@ pub fn print(
                 repo.name(),
                 repo.servers()
                     .first()
-                    .unwrap()
-                    .trim_start_matches("file://")
+                    .map(|s| s.trim_start_matches("file://"))
+                    .unwrap_or("(no server)")
             );
         }
     }
