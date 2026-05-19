@@ -238,10 +238,12 @@ complete -c $progname -l gendb -n "$noopt" -d 'Generate development package DB' 
 # Show options
 complete -c $progname -n "$show" -s w -l news -d 'Print arch news' -f
 complete -c $progname -n "$show" -s s -l stats -d 'Display system package statistics' -f
+complete -c $progname -n "$show" -s o -l order -d 'Print build order for targets' -f
 
 # Getpkgbuild options
 complete -c $progname -n "$getpkgbuild" -s p -l print -d 'Print PKGBUILD instead of downloading' -f
 complete -c $progname -n "$getpkgbuild" -s c -l comments -d "Print the AUR comments from the PKGBUILD's AUR page" -f
+complete -c $progname -n "$getpkgbuild" -s s -l ssh -d 'Clone the AUR package using SSH' -f
 
 complete -c $progname -n "$getpkgbuild" -xa "$listall"
 
@@ -256,10 +258,14 @@ complete -c $progname -n "$repoctl" -s c -l clean -d 'Remove uninstalled package
 # Chrootctl options
 complete -c $progname -n "$chrootctl" -s i -l install -d 'Install a package into the chroot' -xa "$listpacman"
 complete -c $progname -n "$chrootctl" -s u -l sysupgrade -d 'Upgrade the chroot' -f
+complete -c $progname -n "$chrootctl" -s p -l print -d 'Print path to currently configured chroot' -f
 
 # New options
 complete -c $progname -n "not $noopt" -l repo -d 'Assume targets are from the repositories' -f
 complete -c $progname -n "not $noopt" -s a -l aur -d 'Assume targets are from the AUR' -f
+complete -c $progname -n "not $noopt" -l pkgbuilds -d 'Assume targets are from PKGBUILD repositories' -f
+complete -c $progname -n "not $noopt" -l mode -d 'Set target mode (aur|repo|pkgbuilds)' -f
+complete -c $progname -n "not $noopt" -l interactive -d 'Enable interactive package selection' -f
 complete -c $progname -n "not $noopt" -l aururl -d 'Set an alternative AUR URL' -f
 complete -c $progname -n "not $noopt" -l aurrpcurl -d 'Set an alternative URL for the AUR /rpc endpoint' -f
 complete -c $progname -n "not $noopt" -l clonedir -d 'Directory used to download and run PKGBUILDs' -r
@@ -267,8 +273,9 @@ complete -c $progname -n "not $noopt" -l makepkg -d 'Makepkg command to use' -f
 complete -c $progname -n "not $noopt" -l pacman -d 'Pacman command to use' -f
 complete -c $progname -n "not $noopt" -l pacman-conf -d 'Pacman-conf command to use' -f
 complete -c $progname -n "not $noopt" -l git -d 'Git command to use' -f
-complete -c $progname -n "not $noopt" -l asp -d 'Asp command to use' -f
 complete -c $progname -n "not $noopt" -l gpg -d 'Gpg command to use' -f
+complete -c $progname -n "not $noopt" -l sudo -d 'Sudo command to use' -f
+complete -c $progname -n "not $noopt" -l bat -d 'Bat command to use' -f
 complete -c $progname -n "not $noopt" -l fm -d 'File manager to use' -f
 complete -c $progname -n "not $noopt" -l pager -d 'Pager command to use' -f
 complete -c $progname -n "not $noopt" -l completioninterval -d 'Refresh interval for completion cache' -f
@@ -311,7 +318,7 @@ complete -c $progname -n "not $noopt" -l mflags -d 'Pass the following options t
 complete -c $progname -n "not $noopt" -l gitflags -d 'Pass the following options to git' -f
 complete -c $progname -n "not $noopt" -l gpgflags -d 'Pass the following options to gpg' -f
 complete -c $progname -n "not $noopt" -l sudoflags -d 'Pass the following options to sudo' -f
-complete -c $progname -n "not $noopt" -l batflags -d 'Pass the following options to sudo' -f
+complete -c $progname -n "not $noopt" -l batflags -d 'Pass the following options to bat' -f
 complete -c $progname -n "not $noopt" -l fmflags -d 'Pass the following options to file manager' -f
 complete -c $progname -n "not $noopt" -l chrootflags -d 'Pass the following options to makechrootpkg' -f
 complete -c $progname -n "not $noopt" -l sudoloop -d 'Loop sudo calls in the background to avoid timeout' -f
@@ -328,3 +335,13 @@ complete -c $progname -n "not $noopt" -l localrepo -d 'Build packages in a local
 complete -c $progname -n "not $noopt" -l nolocalrepo -d "Don't build packages in a local repo" -f
 complete -c $progname -n "not $noopt" -l skipreview -d 'Skip the review process' -f
 complete -c $progname -n "not $noopt" -l review -d "Don't skip the review process" -f
+complete -c $progname -n "not $noopt" -l nocheck -d 'Do not resolve checkdepends or run the check function' -f
+complete -c $progname -n "not $noopt" -l force-noscriptlet -d 'Force skipping of install scriptlets' -f
+complete -c $progname -n "not $noopt" -l installdebug -d 'Also install debug packages when a package provides them' -f
+complete -c $progname -n "not $noopt" -l noinstalldebug -d "Don't install debug packages" -f
+complete -c $progname -n "not $noopt" -l ignoredevel -d 'Ignore devel upgrades for specified packages' -x
+complete -c $progname -n "not $noopt" -l chrootpkgs -d 'Install packages into chroot before building' -f
+complete -c $progname -n "not $noopt" -l rootchrootpkgs -d 'Packages to install when creating root chroot' -f
+complete -c $progname -n "not $noopt" -l pkgctl -d 'Pkgctl command to use' -f
+complete -c $progname -n "not $noopt" -l nonewsonupgrade -d 'Do not print news during sysupgrade' -f
+complete -c $progname -n "not $noopt" -l noinstall -d 'Do not install package after building or cloning' -f

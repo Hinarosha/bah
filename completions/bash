@@ -168,19 +168,20 @@ _bah() {
   common=('arch cachedir color config confirm dbpath debug gpgdir help hookdir logfile
            noconfirm noprogressbar noscriptlet quiet root verbose
 
-           repo aur aururl clonedir makepkg mflags pacman pacman-conf git gitflags sudo sudoflags
-           asp gpg gpgflags fm fmflags chrootflags pager completioninterval sortby searchby limit
-           upgrademenu removemake noremovemake cleanafter nocleanafter rebuild rebuildall norebuild
-           rebuildtree redownload noredownload redownloadall pgpfetch nopgpfetch useask
+           repo aur pkgbuilds mode aururl clonedir builddir makepkg mflags pacman pacman-conf git gitflags sudo sudoflags
+           pkgctl gpg gpgflags fm fmflags chrootflags chrootpkgs rootchrootpkgs bat batflags pager completioninterval sortby searchby limit
+           upgrademenu removemake noremovemake cleanafter nocleanafter rebuild norebuild
+           redownload noredownload pgpfetch nopgpfetch useask
            nouseask savechanges nosavechanges failfast nofailfast keepsrc nokeepsrc combinedupgrade
            nocombinedupgrade batchinstall nobatchinstall provides noprovides devel nodevel
-           develsuffixes sudoloop nosudoloop bottomup topdown newsonupgrade bat batflags
+           develsuffixes ignoredevel sudoloop nosudoloop bottomup topdown newsonupgrade nonewsonupgrade
            chroot nochroot sign nosign keeprepocache nokeeprepocache signdb nosigndb
-           localrepo nolocalrepo review skipreview' 'b d h q r v a')
+           localrepo nolocalrepo review skipreview interactive nocheck force-noscriptlet
+           installdebug noinstalldebug noinstall optional' 'b d h q r v a')
 
-  show=('news stats' 'w s')
+  show=('news stats order' 'w s o')
   getpkgbuild=('print comments' 'p c')
-  chrootctl=('sysupgrade install' 'u i')
+  chrootctl=('sysupgrade install print' 'u i p')
   repoctl=('quiet list delete refresh clean' 'q l d y c')
 
   if [[ ! $prev =~ ^-[[:alnum:]_]*[Vbhr] && ! $prev == --@(cachedir|color|config|dbpath|help|hookdir|gpgdir|logfile|root|version) ]]; then

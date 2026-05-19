@@ -32,89 +32,89 @@ If the first argument does not start with \(oq\fB\-.\fR\(cq, it may be a verb al
 
 .TP
 .BR search ", " find " ..."
-Equivalent to \fBah \-Ss\fR \.\.\..
+Equivalent to \fBbah \-Ss\fR \.\.\..
 
 .TP
 .B install " ..."
-Equivalent to \fBah \-S\fR \.\.\..
+Equivalent to \fBbah \-S\fR \.\.\..
 
 .TP
 .BR remove ", " uninstall ", " rm " ..."
-Equivalent to \fBah \-R\fR \.\.\..
+Equivalent to \fBbah \-R\fR \.\.\..
 
 .TP
 .B query " ..."
-Equivalent to \fBah \-Q\fR \.\.\..
+Equivalent to \fBbah \-Q\fR \.\.\..
 
 .TP
 .B info " ..."
-Equivalent to \fBah \-Si\fR \.\.\..
+Equivalent to \fBbah \-Si\fR \.\.\..
 
 .TP
 .B build " ..."
-Equivalent to \fBah \-B\fR \.\.\..
+Equivalent to \fBbah \-B\fR \.\.\..
 
 .TP
 .BR clone ", " getpkgbuild ", " fetch " ..."
-Equivalent to \fBah \-G\fR \.\.\..
+Equivalent to \fBbah \-G\fR \.\.\..
 
 .TP
 .B news
-Equivalent to \fBah \-Pw\fR.
+Equivalent to \fBbah \-Pw\fR.
 
 .TP
 .B stats
-Equivalent to \fBah \-P \-\-stats\fR.
+Equivalent to \fBbah \-P \-\-stats\fR.
 
 .TP
 .B order
-Equivalent to \fBah \-P \-\-order\fR.
+Equivalent to \fBbah \-P \-\-order\fR.
 
 .TP
 .B files " ..."
-Equivalent to \fBah \-F\fR \.\.\..
+Equivalent to \fBbah \-F\fR \.\.\..
 
 .TP
 .B database " ..."
-Equivalent to \fBah \-D\fR \.\.\..
+Equivalent to \fBbah \-D\fR \.\.\..
 
 .TP
 .B deptest " ..."
-Equivalent to \fBah \-T\fR \.\.\..
+Equivalent to \fBbah \-T\fR \.\.\..
 
 .TP
 .BR repo ", " repolist
-Equivalent to \fBah \-L\fR.
+Equivalent to \fBbah \-L\fR.
 
 .TP
 .B chroot
-Equivalent to \fBah \-C\fR.
+Equivalent to \fBbah \-C\fR.
 
 .TP
 .B clean " ..."
-Equivalent to \fBah \-S \-c\fR with remaining arguments (clean package cache during sync; see \fBpacman\fR(8)).
+Equivalent to \fBbah \-S \-c\fR with remaining arguments (clean package cache during sync; see \fBpacman\fR(8)).
 
 .TP
 .B list
-Equivalent to \fBah \-Sl\fR.
+Equivalent to \fBbah \-Sl\fR.
 
 .TP
 .B help
-Equivalent to \fBah \-h\fR.
+Equivalent to \fBbah \-h\fR.
 
 .TP
 .B version
-Equivalent to \fBah \-V\fR.
+Equivalent to \fBbah \-V\fR.
 
 .TP
 .BR update ", " upgrade ", " sync ", " up
-With no further arguments: full refresh and upgrade (\fBah \-Syu\fR).
-Otherwise: \fBah \-S\fR with the remaining targets.
+With no further arguments: full refresh and upgrade (\fBbah \-Syu\fR).
+Otherwise: \fBbah \-S\fR with the remaining targets.
 
 .TP
 .I other
 Any other first token (not a path as above) is treated as the start of search terms:
-equivalent to \fBah \-Ss\fR with all arguments.
+equivalent to \fBbah \-Ss\fR with all arguments.
 
 .SH bah OPERATIONS
 .TP
@@ -330,12 +330,17 @@ Upgrade the chroot.
 
 .TP
 .B \-p, \-\-print
-Print path to currently configured chroot.
+Print the path to the currently configured chroot directory.
 
 .SH BUILD OPTIONS (APPLY TO \-B AND \-\-BUILD)
 .TP
 .B \-i, \-\-install
 Also install the package once built.
+
+.TP
+.B \-\-noinstall
+Do not install the package after building or cloning. Applies to both
+\-B and \-G operations.
 
 .SH NEW OPTIONS
 .TP
@@ -418,6 +423,11 @@ The command to use for \fBpacman\fR calls. This can be a command in
 .TP
 .B \-\-pacman-conf <command>
 The command to use for \fBpacman-conf\fR calls. This can be a command in
+\fBPATH\fR or an absolute path to the file.
+
+.TP
+.B \-\-pkgctl <command>
+The command to use for \fBpkgctl\fR calls. This can be a command in
 \fBPATH\fR or an absolute path to the file.
 
 .TP
@@ -605,6 +615,12 @@ usually expect.
 Don't resolve checkdepends or run the check function.
 
 .TP
+.B \-\-force-noscriptlet
+Force skipping of install scriptlets even for packages that declare them.
+Unlike pacman's \fB\-\-noscriptlet\fR this applies globally without requiring
+the flag to be threaded through every pacman invocation.
+
+.TP
 .B \-\-installdebug
 Also install debug packages when a package provides them.
 
@@ -691,6 +707,10 @@ gpg config\%.
 .TP
 .B \-\-newsonupgrade
 Print new news during sysupgrade.
+
+.TP
+.B \-\-nonewsonupgrade
+Do not print news during sysupgrade.
 
 .TP
 .B \-\-useask

@@ -32,7 +32,6 @@ _pacman_opts_common=(
 	'--cachedir[Alternate package cache location]:cache_location:_files -/'
 	'--config[An alternate configuration file]:config file:_files'
 	'--makepkgconf[makepkg.conf file to use]:config file:_files'
-	'--nomakepkgconf[Use the default makepkg.conf]'
 	'--completioninterval[Time in days to refresh completion cache]:number'
 	'--confirm[Always ask for confirmation]'
 	'--debug[Display debug messages]'
@@ -52,16 +51,22 @@ _pacman_opts_common=(
 	'--aurrpcurl[Set an alternative URL for the AUR /rpc endpoint]:url'
 
 	'--clonedir[Directory used to download and run PKGBUILDs]:build dir:_files -/'
+	'--builddir[Alias for --clonedir]:build dir:_files -/'
 	'--makepkg[makepkg command to use]:makepkg:_files'
 	'--pacman[pacman command to use]:pacman:_files'
 	'--pacman-conf[pacman-conf command to use]:pacman:_files'
 	'--git[git command to use]:git:_files'
 	'--gpg[gpg command to use]:gpg:_files'
+	'--sudo[sudo command to use]:sudo:_files'
+	'--pkgctl[pkgctl command to use]:pkgctl:_files'
+	'--bat[bat command to use]:bat:_files'
 	'--fm[file manager to use]:fm:_files'
-	'--asp[asp command to use]:asp:_files'
 	'--pager[pager command to use]:pager:_files'
 
 	'--sortby[Sort AUR results by a specific field during search]:sortby options:(votes popularity id baseid name base submitted modified)'
+	'--pkgbuilds[Assume targets are from PKGBUILD repositories]'
+	'--mode[Set target mode (aur|repo|pkgbuilds)]:mode'
+	'--interactive[Enable interactive package selection for -S, -R, -Ss and -Qs]'
 	'--upgrademenu[Show a detailed list of updates with the option to skip any]'
 	"--noupgrademenu[Don't show the upgrade menu]"
 	"--removemake[Remove makedepends after install]"
@@ -94,19 +99,19 @@ _pacman_opts_common=(
 	'--combinedupgrade[Refresh then perform the repo and AUR upgrade together]'
 	'--nocombinedupgrade[Perform the repo upgrade and AUR upgrade separately]'
 	'--mflags[Pass arguments to makepkg]:mflags'
-	'--gpgflags[Pass arguments to gpg]:gpgflags'
+	'--gpgflags[Pass arguments to gpg]:flags'
 	'--gitflags[Pass arguments to git]:flags'
 	'--sudoflags[Pass arguments to sudo]:flags'
 	'--batflags[Pass arguments to bat]:flags'
-	'--gpgflags[Pass arguments to gpg]:flags'
 	'--fmflags[Pass arguments to file manager]:flags'
 	'--chrootflags[Pass arguments to makechrootpkg]:flags'
+	'--chrootpkgs[Install packages into chroot before building]:packages'
+	'--rootchrootpkgs[Packages to install when creating root chroot]:packages'
 
 	'--sudoloop[Loop sudo calls in the background to avoid timeout]'
 	'--nosudoloop[Do not loop sudo calls in the background]'
 	'--searchby[Search for packages using a specified field]'
 	'--limit[limit number of search results]'
-	'--sortby[Sort AUR results by a specific field during search]'
 	'--batchinstall[Build multiple AUR packages then install them together]'
 	'--nobatchinstall[Build and install each AUR package one by one]'
 	'--chroot[Build packages in a chroot]'
@@ -122,6 +127,14 @@ _pacman_opts_common=(
 
 	'--skipreview[Skip the review process]'
 	"--review[Don't skip the review process]"
+	'--nocheck[Do not resolve checkdepends or run the check function]'
+	'--force-noscriptlet[Force skipping of install scriptlets]'
+	'--installdebug[Also install debug packages when a package provides them]'
+	"--noinstalldebug[Don't install debug packages]"
+	'--ignoredevel[Ignore devel upgrades for specified packages]:package'
+	"--newsonupgrade[Print new news during sysupgrade]"
+	"--nonewsonupgrade[Do not print news during sysupgrade]"
+	"--noinstall[Do not install package after building or cloning]"
 )
 
 # options for passing to _arguments: options for --upgrade commands
@@ -182,16 +195,18 @@ _pacman_opts_repoctl_modifiers=(
 	{-c,--clean}'[Remove uninstalled packages from repos]'
 )
 
-# -L
+# -C
 _pacman_opts_chrootctl_modifiers=(
 	{-i,--install}'[Install a package into the chroot]'
 	{-u,--sysupgrade}'[Upgrade the chroot]'
+	{-p,--print}'[Print path to currently configured chroot]'
 )
 
 # -P
 _pacman_opts_print_modifiers=(
 		{-w,--news}'[Print arch news]'
 		{-s,--stats}'[Display system package statistics]'
+		{-o,--order}'[Print build order for targets]'
 )
 # options for passing to _arguments: options for --remove command
 _pacman_opts_remove=(
