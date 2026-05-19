@@ -8,13 +8,67 @@ use crate::util::ask;
 use std::fs::{read_dir, remove_dir_all, remove_file, set_permissions, DirEntry};
 
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use alpm_utils::DbListExt;
 use anyhow::{Context, Result};
 use srcinfo::Srcinfo;
 use tr::tr;
+
+pub fn clean_alpm_temp_entries(config: &Config, use_sudo: bool) -> Result<()> {
+    for dir in config.alpm.cachedirs().iter() {
+        let path = Path::new(dir);
+        let Ok(entries) = std::fs::read_dir(path) else {
+            continue;
+        };
+        let to_remove: Vec<PathBuf> = entries
+            .flatten()
+            .filter(|e| {
+                let name = e.file_name();
+                let s = name.to_string_lossy();
+                s.starts_with("download-") || s.ends_with(".part")
+            })
+            .map(|e| e.path())
+            .collect();
+        if to_remove.is_empty() {
+            continue;
+        }
+        let c = &config.color;
+        println!(
+            "{} {}",
+            c.action.paint("::"),
+            c.bold.paint(format!(
+                "Removing {} orphaned download temp {} from {}",
+                to_remove.len(),
+                if to_remove.len() == 1 { "entry" } else { "entries" },
+                dir
+            ))
+        );
+        for p in &to_remove {
+            println!("   removing {}", p.display());
+        }
+        if use_sudo {
+            let mut cmd = Command::new(&config.sudo_bin);
+            cmd.args(&config.sudo_flags)
+                .arg("rm")
+                .arg("-rf")
+                .args(&to_remove);
+            exec::command(&mut cmd)?;
+        } else {
+            for p in &to_remove {
+                if p.is_dir() {
+                    remove_dir_all(p)
+                        .with_context(|| format!("failed to remove {}", p.display()))?;
+                } else {
+                    remove_file(p)
+                        .with_context(|| format!("failed to remove {}", p.display()))?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
 
 pub fn clean_aur_and_diff(config: &Config) -> Result<()> {
     let rm = config.delete >= 1;

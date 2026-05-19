@@ -353,6 +353,7 @@ async fn handle_sync(config: &mut Config) -> Result<i32> {
         info::info(config, config.args.count("i", "info") > 1).await
     } else if config.args.has_arg("c", "clean") {
         if config.mode.repo() {
+            clean::clean_alpm_temp_entries(config, true)?;
             backend::pacman(config, &config.args)?.success()?;
         }
         if config.mode.aur() {

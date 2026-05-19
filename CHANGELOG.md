@@ -1,5 +1,13 @@
 # Changelog
 
+## bah v2.6.5 (2026-05-19)
+
+### Fixed
+- `bah clean` no longer errors on `download-XXXXXX` dirs left in the pacman cache by interrupted downloads. These empty dirs (`alpm:alpm`-owned) are now removed via sudo before `pacman -Sc` runs, so pacman never tries to open them as package files.
+- Failed ALPM transactions now also clean up any orphaned download temp entries before returning the error; failures are logged to `/var/log/bah.log`.
+
+Files: src/clean.rs, src/lib.rs, src/tx_helper.rs
+
 ## bah v2.6.4 (2026-05-19)
 
 ### Fixed

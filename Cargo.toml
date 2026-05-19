@@ -1,6 +1,6 @@
 [package]
 name = "bah"
-version = "2.6.4"
+version = "2.6.5"
 authors = ["hinarosha <hinarosha@proton.me>"]
 edition = "2024"
 

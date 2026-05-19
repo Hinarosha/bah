@@ -1538,6 +1538,11 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                         // Cleanup guard will skip unlock() automatically via Drop
                         bah_audit_log("trans_commit: hook failed, cleanup guard will skip unlock()");
                     }
+                    if let Err(ce) = crate::clean::clean_alpm_temp_entries(config, false) {
+                        bah_audit_log(&format!(
+                            "cleanup of orphaned download temp dirs failed: {ce:#}"
+                        ));
+                    }
                     return Err(
                         map_commit_error(e, "failed to commit ALPM sync transaction").into(),
                     );
@@ -1643,6 +1648,11 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                     if code == AlpmError::TransHookFailed {
                         bah_audit_log("trans_commit: hook failed, cleanup guard will skip unlock()");
                     }
+                    if let Err(ce) = crate::clean::clean_alpm_temp_entries(config, false) {
+                        bah_audit_log(&format!(
+                            "cleanup of orphaned download temp dirs failed: {ce:#}"
+                        ));
+                    }
                     return Err(
                         map_commit_error(e, "failed to commit ALPM remove transaction").into(),
                     );
@@ -1743,6 +1753,11 @@ fn execute_plan_root(config: &Config, plan: &TransactionPlan) -> Result<i32> {
                     // BULLETPROOF FIX: Tell cleanup guard to skip unlock on hook failure
                     if code == AlpmError::TransHookFailed {
                         bah_audit_log("trans_commit: hook failed, cleanup guard will skip unlock()");
+                    }
+                    if let Err(ce) = crate::clean::clean_alpm_temp_entries(config, false) {
+                        bah_audit_log(&format!(
+                            "cleanup of orphaned download temp dirs failed: {ce:#}"
+                        ));
                     }
                     return Err(map_commit_error(
                         e,
