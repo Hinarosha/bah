@@ -60,6 +60,15 @@ static LAST_HOOK_RUNNING: Mutex<Option<String>> = Mutex::new(None);
 static HOOK_START_TIME: Mutex<Option<Instant>> = Mutex::new(None);
 /// Counts HookStart/HookDone events during a transaction commit.
 static HOOK_EVENT_COUNT: AtomicUsize = AtomicUsize::new(0);
+/// Set to true by ScriptletInfo if the current hook emits a WARNING exit line.
+/// Reset to false on each HookRunStart so failures are tracked per-hook.
+static CURRENT_HOOK_FAILED: AtomicBool = AtomicBool::new(false);
+
+// ANSI constants used in helper_event_cb where ansiterm may suppress colors
+// because the helper's original stdout is a JSON IPC pipe (not a TTY).
+const HELPER_ANSI_ACTION: &str = "\x1b[1;34m"; // Bold Blue — matches config.color.action
+const HELPER_ANSI_BOLD: &str = "\x1b[1m";
+const HELPER_ANSI_RESET: &str = "\x1b[0m";
 
 /// Timeout for individual hooks in post-transaction phase (seconds).
 /// Reserved for future hook timeout detection implementation.
@@ -541,6 +550,7 @@ pub enum HelperToParent {
         current: usize,
         total: usize,
         desc: String,
+        failed: bool,
     },
     HookPhaseDone,
     LogLine {
@@ -830,8 +840,9 @@ pub fn run_plan_with_helper(config: &Config, plan: &TransactionPlan) -> Result<S
                         current,
                         total,
                         desc,
+                        failed,
                     } => {
-                        ui.on_hook_step(config, current, total, &desc);
+                        ui.on_hook_step(config, current, total, &desc, failed);
                     }
                     HelperToParent::HookPhaseDone => {
                         ui.on_hook_phase_done(config);
@@ -1862,27 +1873,37 @@ fn emit(msg: &HelperToParent) -> Result<()> {
     Ok(())
 }
 
-fn helper_event_cb(event: AnyEvent, c: &mut Colors) {
+fn helper_event_cb(event: AnyEvent, _c: &mut Colors) {
     use Event::*;
     let message_opt: Option<String> = match event.event() {
         // HIGH #2 & HIGH #7 FIX: Stream scriptlet/hook output directly to terminal
         // instead of buffering via JSON IPC. This preserves ANSI formatting and
         // provides real-time feedback for long-running hooks like mkinitcpio.
         ScriptletInfo(s) => {
-            // Direct streaming to stdout (fd 1) - bypasses JSON IPC buffering
-            // The line already contains ANSI formatting from the scriptlet/hook
             let line = s.line();
             if !line.is_empty() {
-                // BULLETPROOF FIX: Use atomic STDOUT lock to prevent interleaving
-                // This ensures hook output is never corrupted by concurrent messages
+                // Detect hook failure: failing hooks emit a WARNING line like
+                // `==> WARNING: `cmd` exited N` — the only per-hook signal ALPM provides.
+                if line.contains("WARNING:") && line.contains("exited ") {
+                    let failed = line.rsplit("exited ").next()
+                        .and_then(|s| s.trim().parse::<i32>().ok())
+                        .map_or(true, |code| code != 0);
+                    if failed {
+                        CURRENT_HOOK_FAILED.store(true, Ordering::Relaxed);
+                    }
+                }
+                // Stream directly to terminal; s.line() already includes '\n' — don't double it.
                 if let Ok(_lock) = StdoutLock::acquire() {
                     let _ = std::io::stdout().write_all(line.as_bytes());
-                    let _ = std::io::stdout().write_all(b"\n");
+                    if !line.ends_with('\n') {
+                        let _ = std::io::stdout().write_all(b"\n");
+                    }
                     let _ = std::io::stdout().flush();
                 } else {
-                    // Fallback if lock is poisoned - still better than losing output
                     let _ = std::io::stdout().write_all(line.as_bytes());
-                    let _ = std::io::stdout().write_all(b"\n");
+                    if !line.ends_with('\n') {
+                        let _ = std::io::stdout().write_all(b"\n");
+                    }
                     let _ = std::io::stdout().flush();
                 }
             }
@@ -1907,43 +1928,32 @@ fn helper_event_cb(event: AnyEvent, c: &mut Colors) {
                 current: hook_position,
                 total: hook_total,
                 desc: hook_desc,
+                failed: CURRENT_HOOK_FAILED.load(Ordering::Relaxed),
             });
             None
         }
+        // These strings are formatted in the helper (where stdout is a pipe, so ansiterm
+        // suppresses colors). Use hardcoded ANSI constants so colors always reach the terminal.
         ResolveDepsStart => Some(format!(
-            "{} {}",
-            c.action.paint("::"),
-            c.bold.paint("Resolving dependencies...")
+            "{HELPER_ANSI_ACTION}::{HELPER_ANSI_RESET} {HELPER_ANSI_BOLD}Resolving dependencies...{HELPER_ANSI_RESET}"
         )),
         InterConflictsStart => Some(format!(
-            "{} {}",
-            c.action.paint("::"),
-            c.bold.paint("Checking conflicts...")
+            "{HELPER_ANSI_ACTION}::{HELPER_ANSI_RESET} {HELPER_ANSI_BOLD}Checking conflicts...{HELPER_ANSI_RESET}"
         )),
         IntegrityStart => Some(format!(
-            "{} {}",
-            c.action.paint("::"),
-            c.bold.paint("Checking integrity...")
+            "{HELPER_ANSI_ACTION}::{HELPER_ANSI_RESET} {HELPER_ANSI_BOLD}Checking integrity...{HELPER_ANSI_RESET}"
         )),
         LoadStart => Some(format!(
-            "{} {}",
-            c.action.paint("::"),
-            c.bold.paint("Loading package files...")
+            "{HELPER_ANSI_ACTION}::{HELPER_ANSI_RESET} {HELPER_ANSI_BOLD}Loading package files...{HELPER_ANSI_RESET}"
         )),
         KeyringStart => Some(format!(
-            "{} {}",
-            c.action.paint("::"),
-            c.bold.paint("Checking keyring...")
+            "{HELPER_ANSI_ACTION}::{HELPER_ANSI_RESET} {HELPER_ANSI_BOLD}Checking keyring...{HELPER_ANSI_RESET}"
         )),
         DiskSpaceStart => Some(format!(
-            "{} {}",
-            c.action.paint("::"),
-            c.bold.paint("Checking disk space...")
+            "{HELPER_ANSI_ACTION}::{HELPER_ANSI_RESET} {HELPER_ANSI_BOLD}Checking disk space...{HELPER_ANSI_RESET}"
         )),
         TransactionStart => Some(format!(
-            "{} {}",
-            c.action.paint("::"),
-            c.bold.paint("Committing transaction...")
+            "{HELPER_ANSI_ACTION}::{HELPER_ANSI_RESET} {HELPER_ANSI_BOLD}Committing transaction...{HELPER_ANSI_RESET}"
         )),
         HookStart(he) => {
             bah_audit_log(&format!("hook phase start when={:?}", he.when()));
@@ -1972,7 +1982,7 @@ fn helper_event_cb(event: AnyEvent, c: &mut Colors) {
         HookRunStart(h) => {
             let hook_name = h.name().to_string();
             let hook_desc = h.desc().unwrap_or(&hook_name).to_string();
-            
+            CURRENT_HOOK_FAILED.store(false, Ordering::Relaxed);
             bah_audit_log(&format!(
                 "hook run start name={} desc={}",
                 hook_name, hook_desc
@@ -1991,23 +2001,17 @@ fn helper_event_cb(event: AnyEvent, c: &mut Colors) {
         }
         Event::PackageOperationDone(e) => match e.operation() {
             PackageOperation::Install(newpkg) => Some(format!(
-                "{} {}",
-                c.action.paint("::"),
-                c.bold.paint(format!("Installed {}", newpkg.name()))
+                "{HELPER_ANSI_ACTION}::{HELPER_ANSI_RESET} {HELPER_ANSI_BOLD}Installed {}{HELPER_ANSI_RESET}",
+                newpkg.name()
             )),
             PackageOperation::Upgrade(newpkg, oldpkg) => Some(format!(
-                "{} {}",
-                c.action.paint("::"),
-                c.bold.paint(format!(
-                    "Upgraded {} -> {}",
-                    oldpkg.version().as_str(),
-                    newpkg.version().as_str()
-                ))
+                "{HELPER_ANSI_ACTION}::{HELPER_ANSI_RESET} {HELPER_ANSI_BOLD}Upgraded {} -> {}{HELPER_ANSI_RESET}",
+                oldpkg.version().as_str(),
+                newpkg.version().as_str()
             )),
             PackageOperation::Remove(oldpkg) => Some(format!(
-                "{} {}",
-                c.action.paint("::"),
-                c.bold.paint(format!("Removed {}", oldpkg.name()))
+                "{HELPER_ANSI_ACTION}::{HELPER_ANSI_RESET} {HELPER_ANSI_BOLD}Removed {}{HELPER_ANSI_RESET}",
+                oldpkg.name()
             )),
             _ => None,
         },

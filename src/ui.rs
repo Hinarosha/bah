@@ -23,6 +23,7 @@ const ANSI_CLEAR_LINE: &str = "\r\x1b[2K";
 const ANSI_BOLD: &str = "\x1b[1m";
 const ANSI_BOLD_CYAN: &str = "\x1b[1;36m";
 const ANSI_BOLD_GREEN: &str = "\x1b[1;32m";
+const ANSI_BOLD_RED: &str = "\x1b[1;31m";
 const ANSI_BOLD_BLUE: &str = "\x1b[1;34m";
 const ANSI_CYAN: &str = "\x1b[36m";
 const ANSI_YELLOW: &str = "\x1b[33m";
@@ -901,6 +902,10 @@ fn ansi_ok() -> String {
     format!("{ANSI_BOLD_GREEN}[OK]{ANSI_RESET}")
 }
 
+fn ansi_failed() -> String {
+    format!("{ANSI_BOLD_RED}[FAILED]{ANSI_RESET}")
+}
+
 fn format_speed(bytes_per_sec: f64) -> String {
     if bytes_per_sec >= 1_000_000.0 {
         format!("{:.1}MB/s", bytes_per_sec / 1_000_000.0)
@@ -1395,12 +1400,19 @@ impl TransactionRenderController {
         ));
     }
 
-    pub fn on_hook_step(&mut self, _config: &Config, current: usize, total: usize, desc: &str) {
-        // FIX 2: Consistent colors for hook steps
+    pub fn on_hook_step(&mut self, config: &Config, current: usize, total: usize, desc: &str, failed: bool) {
+        let status = if failed { ansi_failed() } else { ansi_ok() };
         self.on_log_line(&format!(
-            "{} ({}/{}) {} {}",
-            ANSI_BOLD_CYAN, current, total, desc, ansi_ok()
+            "{ANSI_BOLD_CYAN}({current}/{total}) {desc}{ANSI_RESET} {status}"
         ));
+        if failed {
+            let c = &config.color;
+            self.on_log_line(&format!(
+                "{} {}",
+                c.warning.paint("::"),
+                c.bold.paint(format!("Warning: hook '{desc}' failed. The system may be in a partial state."))
+            ));
+        }
     }
 
     pub fn on_hook_phase_done(&mut self, config: &Config) {
@@ -1426,12 +1438,9 @@ pub fn print_hook_phase_start(config: &Config) {
     );
 }
 
-pub fn print_hook_step(_config: &Config, current: usize, total: usize, desc: &str) {
-    // FIX 2: Consistent colors for hook steps
-    println!(
-        "{}{} ({}/{}) {} {}",
-        ANSI_BOLD_CYAN, ANSI_RESET, current, total, desc, ansi_ok()
-    );
+pub fn print_hook_step(_config: &Config, current: usize, total: usize, desc: &str, failed: bool) {
+    let status = if failed { ansi_failed() } else { ansi_ok() };
+    println!("{ANSI_BOLD_CYAN}({current}/{total}) {desc}{ANSI_RESET} {status}");
 }
 
 pub fn print_hook_phase_done(config: &Config) {

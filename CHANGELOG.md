@@ -1,5 +1,14 @@
 # Changelog
 
+## bah v2.6.4 (2026-05-19)
+
+### Fixed
+- Hook steps no longer show `[OK]` when the hook failed. ALPM doesn't expose per-hook exit codes, so failure is detected by parsing the `WARNING: ... exited N` line that failing hooks emit. The status badge switches to `[FAILED]` in bold red, and a warning line is printed below it.
+- Hook subprocess output no longer has a blank line between every line. `s.line()` already includes a trailing newline; the handler was unconditionally appending a second one.
+- `:: Checking keyring...`, `:: Committing transaction...` and similar transaction-phase headers are now colored. These strings were formatted in the helper process where stdout is a pipe — `ansiterm` suppressed ANSI codes on non-TTY. Switched to hardcoded ANSI constants.
+
+Files: src/tx_helper.rs, src/ui.rs
+
 ## bah v2.6.3 (2026-05-19)
 
 ### Fixed
